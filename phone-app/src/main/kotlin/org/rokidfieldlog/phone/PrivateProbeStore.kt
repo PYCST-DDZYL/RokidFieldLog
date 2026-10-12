@@ -1,0 +1,35 @@
+package org.rokidfieldlog.phone
+
+import android.content.Context
+import android.util.AtomicFile
+import org.json.JSONObject
+import java.io.File
+
+class PrivateProbeStore(context: Context) {
+    private val filesRoot = context.filesDir.canonicalFile
+    private val root = File(filesRoot, "fieldlog")
+    private val lastProbe = File(root, "last-probe.json")
+
+    fun save(data: JSONObject) {
+        check(root.isDirectory || root.mkdirs()) { "Private storage unavailable" }
+        val atomic = AtomicFile(lastProbe)
+        val output = atomic.startWrite()
+        try {
+            output.write(data.toString(2).toByteArray(Charsets.UTF_8))
+            atomic.finishWrite(output)
+        } catch (exception: Exception) {
+            atomic.failWrite(output)
+            throw exception
+        }
+    }
+
+    fun last(): JSONObject? = try {
+        // AtomicFile must be allowed to restore a backup after an interrupted write.
+        JSONObject(AtomicFile(lastProbe).readFully().toString(Charsets.UTF_8))
+    } catch (exception: Exception) { null }
+
+    fun deleteAllProjectData() {
+        check(root.canonicalFile.parentFile == filesRoot) { "Unsafe data path" }
+        check(!root.exists() || root.deleteRecursively()) { "Private data deletion failed" }
+    }
+}

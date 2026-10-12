@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="saved_photo_count">本机照片 %1$d 张 · 未同步手机</string>
+</resources>
