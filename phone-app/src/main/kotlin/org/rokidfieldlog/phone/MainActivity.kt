@@ -137,6 +137,7 @@ class MainActivity : Activity() {
                 "LOCATION_DISABLED" -> "手机定位未开启。App 不会自动修改定位设置。"
                 "NO_ENABLED_PROVIDER" -> "没有可用的定位提供者；仅近似权限时，部分手机无法使用卫星定位。"
                 "STALE_LOCATION" -> "位置数据过旧，未采用。"
+                "MISSING_LOCATION_TIME" -> "位置数据缺少有效时间，未采用。"
                 "MOCK_LOCATION_REJECTED" -> "检测到模拟位置，不能作为真实定位验证。"
                 "USER_OR_SCREEN_CLOSED" -> "本次定位已停止。"
                 "PROVIDER_ERROR" -> "系统定位提供者发生错误。"

@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][ValidateSet('glasses','phone')][string]$Target)
+﻿param([Parameter(Mandatory=$true)][ValidateSet('glasses','phone')][string]$Target)
 . (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
 $moduleName = if ($Target -eq 'glasses') { 'glasses-app' } else { 'phone-app' }
 $relativeApk = "$moduleName/build/outputs/apk/debug/$moduleName-debug.apk"

@@ -5,7 +5,7 @@ The project is currently validating Phase 1. Keep changes within the active phas
 - Use Kotlin and the existing Android modules. Keep project tools, temporary evidence, and test assets within the project root.
 - Verify Rokid API names and compatibility against official documentation and the actual distributed SDK before adding an integration. An SDK mismatch blocks that integration; do not replace it with a claimed successful mock.
 - Preserve null unknown positions, raw capture times, fix time/accuracy/source, and connection state. Photographer location and manually corrected issue location are distinct.
-- Do not add AI, accounts, cloud storage, automatic submissions, background tracking, or broad storage permissions to version 1.
+- AI assistance is now in scope, but requires explicit model provenance, domain-specific evaluation, abstention, and human review before activation. Do not label manual tags or fixtures as recognition success. Accounts, cloud storage, automatic submissions, and broad storage permissions remain outside version 1. Background location requires its own Phase 2 design and device acceptance.
 - Obtain the device owner's authorization before installation, permission changes, setting changes, or destructive tests. Never operate on other apps' data or public photos.
 
 ## Check changes

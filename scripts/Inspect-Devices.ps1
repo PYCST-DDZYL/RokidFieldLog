@@ -1,4 +1,4 @@
-. (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
+﻿. (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
 $adbExecutable = Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe'
 if (!(Test-Path -LiteralPath $adbExecutable)) { throw 'ADB is missing' }
 $env:ANDROID_ADB_LOG_PATH = Join-Path $localRoot 'adb-server.log'

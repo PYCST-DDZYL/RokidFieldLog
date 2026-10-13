@@ -1,4 +1,4 @@
-. (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
+﻿. (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
 $gradleHash = '20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78'
 $gradleArchive = Join-Path $localRoot 'downloads\gradle-8.13-bin.zip'
 if (!(Test-Path -LiteralPath $gradleArchive)) {

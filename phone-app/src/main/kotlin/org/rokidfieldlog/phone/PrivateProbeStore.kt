@@ -25,7 +25,10 @@ class PrivateProbeStore(context: Context) {
 
     fun last(): JSONObject? = try {
         // AtomicFile must be allowed to restore a backup after an interrupted write.
-        JSONObject(AtomicFile(lastProbe).readFully().toString(Charsets.UTF_8))
+        AtomicFile(lastProbe).openRead().use { input ->
+            check(input.channel.size() <= 256 * 1024) { "Probe history exceeds supported size" }
+            JSONObject(input.bufferedReader(Charsets.UTF_8).readText())
+        }
     } catch (exception: Exception) { null }
 
     fun deleteAllProjectData() {

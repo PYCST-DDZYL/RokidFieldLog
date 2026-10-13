@@ -1,4 +1,4 @@
-. (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
+﻿. (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
 $adbExecutable = Join-Path $env:ANDROID_HOME 'platform-tools/adb.exe'
 $rows = & $adbExecutable -P 5047 devices -l
 if ($LASTEXITCODE -ne 0) { throw 'ADB discovery failed.' }
@@ -12,9 +12,9 @@ foreach ($row in $rows) {
 }
 if ($phoneCandidates.Count -ne 1) { throw 'Expected exactly one physical phone; no private data read.' }
 # Read only this project's diagnostic JSON, never shared storage or other packages.
-$rawResult = & $adbExecutable -P 5047 -s $phoneCandidates[0] exec-out run-as org.rokidfieldlog.phone cat files/fieldlog/last-probe.json 2>&1
-if ($LASTEXITCODE -ne 0) { throw 'No readable Companion result yet. Run a real location test first.' }
-$rawJson = $rawResult -join "`n"
+$probeRun = Invoke-ProjectNativeCapture -Executable $adbExecutable -NativeArguments @('-P','5047','-s',$phoneCandidates[0],'exec-out','run-as','org.rokidfieldlog.phone','cat','files/fieldlog/last-probe.json')
+if ($probeRun.ExitCode -ne 0) { throw 'No readable Companion result yet. Run a real location test first.' }
+$rawJson = $probeRun.Lines -join "`n"
 $probe = $rawJson | ConvertFrom-Json
 if ($probe.schemaVersion -ne 1 -or $probe.probeId -notmatch '^[0-9a-f-]{36}$') { throw 'Unsupported diagnostic record.' }
 $privateFolder = Join-Path $localRoot 'device'

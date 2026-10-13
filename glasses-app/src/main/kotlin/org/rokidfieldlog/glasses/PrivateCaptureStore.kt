@@ -7,6 +7,9 @@ import org.json.JSONObject
 import java.io.File
 import org.rokidfieldlog.core.CaptureFiles
 import org.rokidfieldlog.core.CaptureStamp
+import org.rokidfieldlog.core.CaptureTimeQuality
+import org.rokidfieldlog.core.IssueCategory
+import org.rokidfieldlog.core.PhotoDigest
 import java.util.UUID
 
 class PrivateCaptureStore(context: Context, rootOverride: File? = null) {
@@ -36,22 +39,32 @@ class PrivateCaptureStore(context: Context, rootOverride: File? = null) {
         pending
     }
 
-    fun finishPhoto(photoId: String, pending: File, requestedAt: Long, requestedElapsed: Long): File = synchronized(storageLock) {
+    fun finishPhoto(photoId: String, pending: File, requestedAt: Long, requestedElapsed: Long,
+        category: IssueCategory? = null): File = synchronized(storageLock) {
         try {
             check(pending.canonicalFile == captureFiles.pending(photoId).canonicalFile) { "Unexpected photo path" }
             val stamp = captureFiles.stamp(photoId)
             check(stamp == CaptureStamp(photoId, requestedAt, requestedElapsed)) { "Capture request journal unavailable" }
             val completedAt = System.currentTimeMillis()
             val completedElapsed = android.os.SystemClock.elapsedRealtimeNanos()
+            val timeQuality = CaptureTimeQuality.assess(requestedAt, completedAt, requestedElapsed, completedElapsed)
             val dimensions = checkNotNull(imageDimensions(pending)) { "Photo cannot be decoded completely" }
             val photo = captureFiles.promote(photoId)
             verifiedPhotos.add(photoId)
             val metadata = baseRecord(photoId, stamp)
+                .put("photoSha256", PhotoDigest.sha256(photo))
+                .put("photoSha256Source", "CAPTURE_SAVE")
                 .put("captureState", "SAVED")
                 .put("photoIntegrityStatus", "VERIFIED")
                 .put("captureCompletedAtUtcMillis", completedAt)
                 .put("captureCompletedElapsedRealtimeNanos", completedElapsed)
                 .put("captureTimeSource", "APP_REQUEST_INTERVAL_NOT_EXPOSURE_TIME")
+                .put("captureWallClockStatus", timeQuality.status.name)
+                .put("captureDurationMillis", timeQuality.durationMillis ?: JSONObject.NULL)
+                .put("issueCategory", category?.name ?: JSONObject.NULL)
+                .put("issueCategorySource", if (category == null) "UNCONFIRMED" else "USER_TAGGED")
+                .put("issueCategoryNeedsReview", true)
+                .put("recognitionStatus", "NOT_RUN")
                 .put("width", dimensions.first)
                 .put("height", dimensions.second)
             writeRecord(photoId, metadata)
@@ -83,6 +96,20 @@ class PrivateCaptureStore(context: Context, rootOverride: File? = null) {
                 if (existing != null && existing.optInt("schemaVersion") != 1) { errors++; continue }
                 val candidate = if (photo.isFile) photo else pending
                 val dimensions = imageDimensions(candidate)
+                val trustedIdentity = existing?.optString("photoId") == id
+                val expectedHash = if (trustedIdentity && !existing!!.isNull("photoSha256")) existing.optString("photoSha256") else null
+                if (dimensions != null && expectedHash != null &&
+                    (!expectedHash.matches(Regex("[0-9a-fA-F]{64}")) || !PhotoDigest.sha256(candidate).equals(expectedHash, true))) {
+                    incomplete++
+                    if (existing!!.optString("photoIntegrityStatus") != "HASH_MISMATCH") {
+                        preservePreviousRecord(id)
+                        writeRecord(id, JSONObject(existing.toString())
+                            .put("photoIntegrityStatus", "HASH_MISMATCH")
+                            .put("lastStorageCheckAtUtcMillis", System.currentTimeMillis()))
+                    }
+                    // Preserve both the current bytes and the original fingerprint.
+                    continue
+                }
                 if (photo.isFile && dimensions != null && existing?.optString("photoId") == id &&
                     existing.optString("photoFile") == "photos/$id.jpg" &&
                     existing.optInt("width") == dimensions.first && existing.optInt("height") == dimensions.second &&
@@ -103,6 +130,10 @@ class PrivateCaptureStore(context: Context, rootOverride: File? = null) {
                         .put("height", dimensions.second)
                         .put("recoveredAtUtcMillis", System.currentTimeMillis())
                         .put("captureElapsedClockStatus", "ORIGINAL_CAPTURE_BOOT_UNCONFIRMED_AFTER_RECOVERY")
+                    if (expectedHash == null) {
+                        metadata.put("photoSha256", PhotoDigest.sha256(photo))
+                            .put("photoSha256Source", "RECOVERY_VERIFICATION_CURRENT_BYTES")
+                    }
                     writeRecord(id, metadata)
                     recovered++
                 } else {

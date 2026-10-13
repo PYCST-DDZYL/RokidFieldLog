@@ -147,12 +147,14 @@ class LocationProbe(private val context: Context) {
 
     private fun accept(location: Location): Boolean {
         val receivedElapsed = SystemClock.elapsedRealtimeNanos()
+        val receivedAt = System.currentTimeMillis()
         if (attempt!!.isExpired(receivedElapsed)) { fail("TIMEOUT"); return true }
         if (LocationCompat.isMock(location)) {
             lastRejection = "MOCK_LOCATION_REJECTED"
             return false
         }
         val accuracy = if (location.hasAccuracy()) location.accuracy else null
+        if (location.time <= 0) { lastRejection = "MISSING_LOCATION_TIME"; return false }
         val rejection = LocationQuality.rejectionReason(location.latitude, location.longitude,
             accuracy, location.elapsedRealtimeNanos, receivedElapsed)
         if (rejection != null) { lastRejection = rejection; return false }
@@ -166,18 +168,19 @@ class LocationProbe(private val context: Context) {
             .put("ageAtReceiptMillis", (receivedElapsed - location.elapsedRealtimeNanos) / 1_000_000)
             .put("provider", location.provider ?: "unknown")
             .put("isMock", false)
-        finish(baseResult("SUCCESS").put("location", observation))
+        finish(baseResult("SUCCESS", receivedAt, receivedElapsed).put("location", observation))
         return true
     }
 
-    private fun baseResult(status: String) = JSONObject()
+    private fun baseResult(status: String, receivedAt: Long = System.currentTimeMillis(),
+        receivedElapsed: Long = SystemClock.elapsedRealtimeNanos()) = JSONObject()
         .put("schemaVersion", 1)
         .put("probeId", probeId)
         .put("status", status)
         .put("requestedAtUtcMillis", requestedAt)
         .put("requestedElapsedRealtimeNanos", requestedElapsed)
-        .put("receivedAtUtcMillis", System.currentTimeMillis())
-        .put("receivedElapsedRealtimeNanos", SystemClock.elapsedRealtimeNanos())
+        .put("receivedAtUtcMillis", receivedAt)
+        .put("receivedElapsedRealtimeNanos", receivedElapsed)
         .put("permissionLevel", permissionLevel)
         .put("source", attempt?.source?.name ?: "NONE")
         .put("glassesConnectionStatus", "NOT_CONFIGURED_PHASE1")

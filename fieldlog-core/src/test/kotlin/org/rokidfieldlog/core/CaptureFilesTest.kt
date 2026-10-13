@@ -71,4 +71,20 @@ class CaptureFilesTest {
         assertTrue(store().ids().contains(id))
         assertFalse(store().completed(id).exists())
     }
+
+    @Test fun newCaptureCannotReuseIdOfLegacyRecordWithoutPhotoOrJournal() {
+        val records = File(temporary.root, "records").apply { mkdirs() }
+        val original = File(records, "$id.json").apply { writeText("original annotation fixture") }
+        assertThrows(IllegalStateException::class.java) { store().begin(stamp) }
+        assertEquals("original annotation fixture", original.readText())
+        assertFalse(File(temporary.root, "journals/$id.journal").exists())
+    }
+
+    @Test fun atomicBackupAloneAlsoReservesItsCaptureId() {
+        val records = File(temporary.root, "records").apply { mkdirs() }
+        File(records, "$id.json.bak").writeText("recoverable annotation fixture")
+        assertThrows(IllegalStateException::class.java) { store().begin(stamp) }
+        assertTrue(store().ids().contains(id))
+        assertEquals("recoverable annotation fixture", File(records, "$id.json.bak").readText())
+    }
 }

@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import org.json.JSONObject
 import org.rokidfieldlog.core.CaptureFiles
+import org.rokidfieldlog.core.IssueCategory
 import java.io.File
 import java.util.UUID
 
@@ -23,9 +24,10 @@ class RecoveryInstrumentation : Instrumentation() {
             var passed = 0
 
             fun caseRoot(name: String) = File(testRoot, name)
-            fun jpeg(file: File) {
+            fun jpeg(file: File, color: Int = android.graphics.Color.BLACK) {
                 check(file.parentFile!!.isDirectory || file.parentFile!!.mkdirs())
                 val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(color)
                 try { file.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it)) } }
                 finally { bitmap.recycle() }
             }
@@ -186,6 +188,88 @@ class RecoveryInstrumentation : Instrumentation() {
                 check(value.getString("photoId") == id && value.getString("captureState") == "INCOMPLETE")
                 check(value.isNull("issueLocation") && value.isNull("captureRequestedAtUtcMillis"))
                 check(File(root, "records/recovery-backups").listFiles()!!.size == 1)
+                passed++
+            }
+
+            // A manual tag remains a human observation, never an AI success claim.
+            run {
+                val root = caseRoot("manual-category")
+                val id = UUID.randomUUID().toString()
+                val store = PrivateCaptureStore(targetContext, root)
+                val pending = store.pendingPhoto(id, requestedUtc, requestedElapsed)
+                jpeg(pending)
+                store.finishPhoto(id, pending, requestedUtc, requestedElapsed, IssueCategory.LITTER)
+                val original = File(root, "records/$id.json").readBytes()
+                check(PrivateCaptureStore(targetContext, root).recoverInterruptedCaptures().errors == 0)
+                val value = record(root, id)
+                check(value.getString("issueCategory") == "LITTER")
+                check(value.getString("issueCategorySource") == "USER_TAGGED")
+                check(value.getBoolean("issueCategoryNeedsReview"))
+                check(value.getString("recognitionStatus") == "NOT_RUN")
+                check(value.getString("captureWallClockStatus") == "WALL_CLOCK_DISCONTINUITY")
+                check(original.contentEquals(File(root, "records/$id.json").readBytes()))
+                passed++
+            }
+
+            // A replacement JPEG with identical dimensions must not inherit old evidence.
+            run {
+                val root = caseRoot("valid-image-replaced")
+                val id = UUID.randomUUID().toString()
+                val store = PrivateCaptureStore(targetContext, root)
+                val pending = store.pendingPhoto(id, requestedUtc, requestedElapsed)
+                jpeg(pending)
+                store.finishPhoto(id, pending, requestedUtc, requestedElapsed)
+                val original = record(root, id)
+                jpeg(File(root, "photos/$id.jpg"), android.graphics.Color.WHITE)
+                val changedBytes = File(root, "photos/$id.jpg").readBytes()
+                val restarted = PrivateCaptureStore(targetContext, root)
+                val report = restarted.recoverInterruptedCaptures()
+                check(report.incompleteCaptures == 1 && report.errors == 0 && restarted.savedPhotoCount() == 0)
+                val value = record(root, id)
+                check(value.getString("photoIntegrityStatus") == "HASH_MISMATCH")
+                check(value.getString("photoSha256") == original.getString("photoSha256"))
+                check(value.getLong("captureRequestedAtUtcMillis") == requestedUtc)
+                check(changedBytes.contentEquals(File(root, "photos/$id.jpg").readBytes()))
+                passed++
+            }
+
+            // A corrupt fingerprint is retained for review rather than silently rebound.
+            run {
+                val root = caseRoot("invalid-fingerprint")
+                val id = UUID.randomUUID().toString()
+                val store = PrivateCaptureStore(targetContext, root)
+                val pending = store.pendingPhoto(id, requestedUtc, requestedElapsed)
+                jpeg(pending)
+                store.finishPhoto(id, pending, requestedUtc, requestedElapsed)
+                val original = record(root, id).put("photoSha256", "invalid fixture fingerprint")
+                File(root, "records/$id.json").writeText(original.toString(2), Charsets.UTF_8)
+                val restarted = PrivateCaptureStore(targetContext, root)
+                check(restarted.recoverInterruptedCaptures().incompleteCaptures == 1)
+                check(restarted.savedPhotoCount() == 0)
+                check(record(root, id).getString("photoIntegrityStatus") == "HASH_MISMATCH")
+                check(record(root, id).getString("photoSha256") == "invalid fixture fingerprint")
+                passed++
+            }
+
+            // An unrelated record's fingerprint must not be adopted or used for this ID.
+            run {
+                val root = caseRoot("foreign-fingerprint")
+                val id = UUID.randomUUID().toString()
+                jpeg(File(root, "photos/$id.jpg"))
+                File(root, "records").mkdirs()
+                val unrelated = JSONObject().put("schemaVersion", 1)
+                    .put("photoId", UUID.randomUUID().toString())
+                    .put("photoSha256", "a".repeat(64))
+                    .put("description", "unrelated fixture annotation")
+                File(root, "records/$id.json").writeText(unrelated.toString(2), Charsets.UTF_8)
+                val restarted = PrivateCaptureStore(targetContext, root)
+                val report = restarted.recoverInterruptedCaptures()
+                check(report.recoveredRecords == 1 && report.errors == 0 && restarted.savedPhotoCount() == 1)
+                val value = record(root, id)
+                check(value.getString("photoId") == id && !value.has("description"))
+                check(value.getString("photoSha256") != "a".repeat(64))
+                check(value.getString("photoSha256Source") == "RECOVERY_VERIFICATION_CURRENT_BYTES")
+                check(value.isNull("captureRequestedAtUtcMillis"))
                 passed++
             }
 

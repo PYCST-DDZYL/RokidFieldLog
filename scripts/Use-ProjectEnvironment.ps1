@@ -1,4 +1,5 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Invoke-ProjectNativeCapture.ps1')
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $localRoot = Join-Path $projectRoot '.local'
 $env:ANDROID_HOME = Join-Path $projectRoot '.tools\android-sdk'
@@ -36,7 +37,9 @@ $studioProperties = @(
 # Gradle writes those files using its daemon's default encoding. Match them in
 # a project-private user property, while leaving all Kotlin/XML/JSON in UTF-8.
 if (Test-Path -LiteralPath "$env:JAVA_HOME\bin\java.exe") {
-    $javaSettings = & "$env:JAVA_HOME\bin\java.exe" -XshowSettings:properties -version 2>&1
+    $javaRun = Invoke-ProjectNativeCapture -Executable "$env:JAVA_HOME\bin\java.exe" -NativeArguments @('-XshowSettings:properties', '-version')
+    if ($javaRun.ExitCode -ne 0) { throw 'Project Java settings query failed.' }
+    $javaSettings = $javaRun.Lines
     $nativeEncodingMatch = [regex]::Match(($javaSettings -join "`n"), 'native\.encoding\s*=\s*([A-Za-z0-9_-]+)')
     if ($nativeEncodingMatch.Success) {
         $nativeEncoding = $nativeEncodingMatch.Groups[1].Value

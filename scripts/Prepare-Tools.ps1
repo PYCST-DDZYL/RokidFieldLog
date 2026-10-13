@@ -1,4 +1,4 @@
-param([switch]$AcceptSdkLicense)
+﻿param([switch]$AcceptSdkLicense)
 $ErrorActionPreference = 'Stop'
 
 if (!$AcceptSdkLicense) {
@@ -56,10 +56,9 @@ if (!(Test-Path -LiteralPath $sdkManager)) {
 $buildJava = $env:JAVA_HOME
 try {
     $env:JAVA_HOME = $env:STUDIO_JDK
-    $acceptedAnswers = "y`ny`ny`n"
-    $installOutput = $acceptedAnswers | & $sdkManager "--sdk_root=$env:ANDROID_HOME" 'platform-tools' 'platforms;android-36' 'build-tools;35.0.0' 2>&1
-    [System.IO.File]::WriteAllLines((Join-Path $localRoot 'sdk-install.log'), [string[]]$installOutput)
-    if ($LASTEXITCODE -ne 0) { throw 'SDK package installation failed; inspect .local/sdk-install.log' }
+    $sdkRun = Invoke-ProjectNativeCapture -Executable $sdkManager -NativeArguments @("--sdk_root=$env:ANDROID_HOME", 'platform-tools', 'platforms;android-36', 'build-tools;35.0.0') -InputLines @('y','y','y')
+    [System.IO.File]::WriteAllLines((Join-Path $localRoot 'sdk-install.log'), $sdkRun.Lines, [System.Text.UTF8Encoding]::new($false))
+    if ($sdkRun.ExitCode -ne 0) { throw 'SDK package installation failed; inspect .local/sdk-install.log' }
 } finally { $env:JAVA_HOME = $buildJava }
 
 [System.IO.File]::WriteAllText((Join-Path $projectRoot 'local.properties'), "sdk.dir=.tools/android-sdk`n", [System.Text.UTF8Encoding]::new($false))

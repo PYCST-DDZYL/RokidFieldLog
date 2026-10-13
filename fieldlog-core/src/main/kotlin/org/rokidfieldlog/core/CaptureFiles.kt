@@ -37,7 +37,8 @@ class CaptureFiles(private val root: File) {
         check(journals.isDirectory || journals.mkdirs()) { "Cannot create private journal directory" }
         val journal = File(journals, "${stamp.photoId}.journal")
         val temporary = File(journals, "${stamp.photoId}.journal.new")
-        check(!pending(stamp.photoId).exists() && !completed(stamp.photoId).exists() && !journal.exists() && !temporary.exists()) { "Capture ID already exists" }
+        val recordExists = listOf("json", "json.bak", "json.new").any { File(root, "records/${stamp.photoId}.$it").exists() }
+        check(!recordExists && !pending(stamp.photoId).exists() && !completed(stamp.photoId).exists() && !journal.exists() && !temporary.exists()) { "Capture ID already exists" }
         val buffer = ByteArrayOutputStream()
         DataOutputStream(buffer).use {
             it.writeInt(MAGIC)

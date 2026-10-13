@@ -49,7 +49,7 @@ After authorizing synthetic storage tests on this app:
 .\scripts\Test-StorageRecovery.ps1 -ConfirmDeviceTest
 ```
 
-Expected: 9 passed. These tests do not take a photograph or obtain location, and do not delete production data. Fixtures stay in the app-private `fieldlog/test-fixtures` directory until the user clears the app's project data or uninstalls it.
+Expected: 13 passed. These tests do not take a photograph or obtain location, and do not delete production data. Fixtures stay in the app-private `fieldlog/test-fixtures` directory until the user clears the app's project data or uninstalls it. See the [latest reliability update](reliability-update.md).
 
 ## Install and test the phone probe
 

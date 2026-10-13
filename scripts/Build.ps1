@@ -1,4 +1,4 @@
-param([switch]$Verify, [switch]$Clean)
+﻿param([switch]$Verify, [switch]$Clean)
 . (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
 if (!(Test-Path -LiteralPath "$env:JAVA_HOME\bin\java.exe")) { throw 'Project JDK is missing. Prepare development tools first.' }
 $gradleArguments = @('--no-daemon', ':glasses-app:assembleDebug', ':phone-app:assembleDebug')

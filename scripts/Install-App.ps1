@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory=$true)][ValidateSet('glasses','phone')][string]$Target,
     [switch]$ConfirmInstallation,
     [switch]$StartApp

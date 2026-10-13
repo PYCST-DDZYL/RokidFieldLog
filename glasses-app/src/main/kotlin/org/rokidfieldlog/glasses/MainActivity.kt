@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.AlertDialog
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.content.res.ColorStateList
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -16,9 +17,12 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.ArrayAdapter
+import android.widget.CheckedTextView
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -30,18 +34,20 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import java.io.File
 import java.util.UUID
-import java.util.concurrent.Executors
+import org.rokidfieldlog.core.IssueCategory
 
 class MainActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
-    private val fileExecutor = Executors.newSingleThreadExecutor()
+    private val fileExecutor by lazy { (application as GlassesApplication).captureFileExecutor }
     private lateinit var store: PrivateCaptureStore
     private lateinit var panel: LinearLayout
     private lateinit var status: TextView
     private lateinit var count: TextView
     private lateinit var captureButton: Button
+    private lateinit var categoryButton: Button
     private lateinit var deleteButton: Button
     private var selectedAction = 0
+    private var selectedCategory: IssueCategory? = null
     private var previousKeyCode = -1
     private var previousKeyTime = 0L
     private var imageCapture: ImageCapture? = null
@@ -73,7 +79,7 @@ class MainActivity : ComponentActivity() {
                     Log.i("FieldLog", "RECOVERY_CHECK restored=${report.recoveredRecords} incomplete=${report.incompleteCaptures} errors=${report.errors}")
                     when {
                         report.errors > 0 -> "恢复未完成 · 原文件保留"
-                        report.incompleteCaptures > 0 -> "有 ${report.incompleteCaptures} 次未完成拍摄"
+                        report.incompleteCaptures > 0 -> "有 ${report.incompleteCaptures} 条照片需核对"
                         report.recoveredRecords > 0 -> "已恢复 ${report.recoveredRecords} 条照片记录"
                         else -> ""
                     }
@@ -97,8 +103,10 @@ class MainActivity : ComponentActivity() {
         panel.addView(status)
         panel.addView(count)
         captureButton = outlineButton("拍照 / 单指点击") { capture() }
+        categoryButton = outlineButton("问题类型：待确认") { chooseCategory() }
         deleteButton = outlineButton("删除全部项目数据") { confirmDelete() }
         panel.addView(captureButton)
+        panel.addView(categoryButton)
         panel.addView(deleteButton)
         val parameters = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.CENTER
@@ -154,7 +162,7 @@ class MainActivity : ComponentActivity() {
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                     .setJpegQuality(100)
                     .build()
-                provider.unbindAll()
+                imageCapture?.let { provider.unbind(it) }
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, capture)
                 imageCapture = capture
                 Log.i("FieldLog", "CAMERA_READY")
@@ -172,8 +180,7 @@ class MainActivity : ComponentActivity() {
     private fun capture() {
         if (recovering || capturing || SystemClock.elapsedRealtime() - lastCaptureElapsed < 500) return
         selectedAction = 0
-        captureButton.text = "拍照 / 单指点击"
-        deleteButton.text = "删除全部项目数据"
+        updateActionLabels(false)
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             cameraPermission.launch(Manifest.permission.CAMERA)
             return
@@ -183,6 +190,7 @@ class MainActivity : ComponentActivity() {
         val photoId = UUID.randomUUID().toString()
         val requestedAt = System.currentTimeMillis()
         val requestedElapsed = SystemClock.elapsedRealtimeNanos()
+        val capturedCategory = selectedCategory
         val pending: File
         try { pending = store.pendingPhoto(photoId, requestedAt, requestedElapsed) }
         catch (exception: Exception) { showStatus("私有存储不可用", 3_000); return }
@@ -194,7 +202,7 @@ class MainActivity : ComponentActivity() {
                 object : ImageCapture.OnImageSavedCallback {
                     override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                         val feedback = try {
-                            store.finishPhoto(photoId, pending, requestedAt, requestedElapsed)
+                            store.finishPhoto(photoId, pending, requestedAt, requestedElapsed, capturedCategory)
                             Log.i("FieldLog", "CAPTURE_SAVED")
                             "本机已保存 · 位置待确认"
                         } catch (exception: Exception) {
@@ -238,16 +246,15 @@ class MainActivity : ComponentActivity() {
             previousKeyTime = event.eventTime
             if (event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return true
             val action = when {
-                recentPreviousKey == KeyEvent.KEYCODE_DPAD_RIGHT && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> 1
-                recentPreviousKey == KeyEvent.KEYCODE_DPAD_LEFT && event.keyCode == KeyEvent.KEYCODE_DPAD_UP -> 0
+                recentPreviousKey == KeyEvent.KEYCODE_DPAD_RIGHT && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> (selectedAction + 1).coerceAtMost(2)
+                recentPreviousKey == KeyEvent.KEYCODE_DPAD_LEFT && event.keyCode == KeyEvent.KEYCODE_DPAD_UP -> (selectedAction - 1).coerceAtLeast(0)
                 else -> null
             }
             if (action != null) {
                 previousKeyCode = -1
                 selectedAction = action
                 Log.d("FieldLog", "MENU_SELECTED action=$action")
-                captureButton.text = if (action == 0) "> 拍照 / 单指点击" else "拍照"
-                deleteButton.text = if (action == 1) "> 删除全部项目数据" else "删除全部项目数据"
+                updateActionLabels(true)
                 showStatus("滑动选择 · 单指点击确认", 5_000)
                 return true
             }
@@ -259,7 +266,11 @@ class MainActivity : ComponentActivity() {
         if (keyCode == KeyEvent.KEYCODE_ENTER) {
             if (event.repeatCount == 0 && !event.isCanceled) {
                 Log.d("FieldLog", "ENTER_ACTION selection=$selectedAction panelVisible=${panel.visibility == View.VISIBLE}")
-                if (panel.visibility == View.VISIBLE && selectedAction == 1) confirmDelete() else capture()
+                when (if (panel.visibility == View.VISIBLE) selectedAction else 0) {
+                    1 -> chooseCategory()
+                    2 -> confirmDelete()
+                    else -> capture()
+                }
             }
             return true
         }
@@ -276,6 +287,8 @@ class MainActivity : ComponentActivity() {
             .setOnCancelListener { cancelDelete() }
             .setPositiveButton("删除") { _, _ ->
                 selectedAction = 0
+                selectedCategory = null
+                updateActionLabels(false)
                 try { store.deleteAllProjectData(); showStatus("项目数据已删除", 1_500) }
                 catch (exception: Exception) { showStatus("删除未完成", 3_000) }
             }.create()
@@ -291,15 +304,59 @@ class MainActivity : ComponentActivity() {
 
     private fun cancelDelete() {
         selectedAction = 0
-        captureButton.text = "拍照 / 单指点击"
-        deleteButton.text = "删除全部项目数据"
+        updateActionLabels(false)
         showStatus("已取消", 1_500)
+    }
+
+    private fun categoryLabel(category: IssueCategory?): String = when (category) {
+        IssueCategory.ROAD_DAMAGE -> "坑洞 / 路面损坏"
+        IssueCategory.DAMAGED_FACILITY -> "设施损坏"
+        IssueCategory.LITTER -> "垃圾堆积"
+        IssueCategory.OTHER -> "其他问题"
+        null -> "待确认"
+    }
+
+    private fun updateActionLabels(showMarker: Boolean) {
+        fun marker(action: Int) = if (showMarker && selectedAction == action) "> " else ""
+        captureButton.text = marker(0) + "拍照 / 单指点击"
+        categoryButton.text = marker(1) + "问题类型：" + categoryLabel(selectedCategory)
+        deleteButton.text = marker(2) + "删除全部项目数据"
+    }
+
+    private fun chooseCategory() {
+        if (recovering || capturing) return
+        handler.removeCallbacks(hidePanel)
+        val categories = listOf(null) + IssueCategory.entries
+        val labels = categories.map(::categoryLabel).toTypedArray()
+        val adapter = object : ArrayAdapter<String>(this, android.R.layout.simple_list_item_single_choice, labels) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                return super.getView(position, convertView, parent).apply {
+                    (this as CheckedTextView).setTextColor(Color.GREEN)
+                    checkMarkTintList = ColorStateList.valueOf(Color.GREEN)
+                }
+            }
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setCustomTitle(greenText("人工标签 · 后续仍需核对", 21f).apply { setPadding(16, 16, 16, 8) })
+            .setSingleChoiceItems(adapter, categories.indexOf(selectedCategory)) { choiceDialog, which ->
+                selectedCategory = categories[which]
+                selectedAction = 0
+                updateActionLabels(false)
+                Log.d("FieldLog", "CATEGORY_SELECTED value=${selectedCategory?.name ?: "UNCONFIRMED"}")
+                choiceDialog.dismiss()
+                showStatus("已选：${categoryLabel(selectedCategory)}", 1_500)
+            }
+            .setNegativeButton("取消") { _, _ -> cancelDelete() }
+            .setOnCancelListener { cancelDelete() }
+            .create()
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.BLACK))
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(Color.GREEN)
     }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        cameraProvider?.unbindAll()
-        fileExecutor.shutdown()
+        imageCapture?.let { cameraProvider?.unbind(it) }
         super.onDestroy()
     }
 }

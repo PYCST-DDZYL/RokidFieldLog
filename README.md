@@ -2,18 +2,20 @@
 
 An open-source Kotlin project for recording neighborhood maintenance problems with Rokid Glasses and an Android phone.
 
-**Status: Phase 1 development preview.** Local photography has been tested on first-generation Rokid RG-glasses (Android 12 / API 32). The phone location probe builds, but has not yet been tested on a real phone. The connected test phone does not currently expose an ADB interface. This preview does not yet provide the complete field-reporting workflow.
+**Status: Phase 1 development preview.** Local photography has been tested on first-generation Rokid RG-glasses (Android 12 / API 32). The phone location probe builds, but has not yet been tested on a real phone. The test phone is currently disconnected; earlier USB diagnosis is documented separately. This preview does not yet provide the complete field-reporting workflow.
 
 ## Available now
 
 - An on-device glasses app using CameraX ImageCapture, without a camera preview.
 - Real JPEG capture into app-private storage, UUID records, original request/completion timestamps, and a short status message that hides automatically.
 - Durable capture journals, interrupted-write recovery, validation of saved images, and preservation of existing annotations during repair.
+- Human-selected quick tags for road damage, damaged facilities, litter, and other issues. Tags remain pending review; they are not AI recognition.
+- Saved-photo SHA-256 fingerprints and capture clock-interval checks. Changed bytes require review; raw timestamps are preserved.
 - A separate phone location probe: Fused Location Provider when Google Play services are available, Android system providers otherwise.
 - Location quality checks, cancellation, a 20-second deadline, and explicit null coordinates on failure. System fallback can also be selected manually.
 - A confirmed "delete all project data" action in each app. No shared storage permission or background location tracking.
 
-**Not implemented:** glasses-to-phone communication, photo/location time matching across devices, phone photo browsing, a map, manual issue-position correction, categories, notes, and report export. AI recognition, servers, accounts, and automatic municipal submissions are outside version 1.
+**Not implemented:** glasses-to-phone communication, photo/location time matching across devices, phone photo browsing, a map, manual issue-position correction, phone category editing, notes, report export, and validated automatic issue recognition. AI assistance has now been requested, but no model has passed domain-specific acceptance tests; see [recognition readiness](docs/recognition-readiness.md). Servers, accounts, and automatic municipal submissions remain outside version 1.
 
 Bluetooth pairing alone does not grant access to phone GPS. Phase 2 must implement an explicit companion protocol using verified Rokid APIs. No Rokid SDK binary or invented SDK interface is included in this preview.
 
@@ -64,17 +66,17 @@ On the glasses, a single touchpad tap is mapped by Rokid firmware to Enter. Actu
 | Check | Evidence |
 | --- | --- |
 | Both debug APKs build, startup classes present | Passed |
-| Kotlin core tests | 18 passed |
+| Kotlin core tests | 26 passed |
 | Android Lint | No errors; dependency/style warnings remain |
 | Real glasses camera and private JPEG/JSON save | Passed on RG-glasses, 4032 × 3024 |
 | Cold restart, original records retained, prompt hidden | Passed |
-| Android storage recovery fixtures | 9 passed on the glasses; synthetic fixtures, not camera/GPS evidence |
+| Android storage recovery fixtures | 13 passed on the glasses; synthetic fixtures, not camera/GPS evidence |
 | Cancel a delete dialog with Back | Passed on the glasses; no deletion performed |
 | Physical touchpad gestures and optical display | Pending |
 | Real phone location, approximate permission, non-GMS phones | Pending |
 | Cross-device communication and reporting workflow | Not implemented |
 
-Details and reproducible checks: [Phase 1 status](docs/phase1-status.md), [capture recovery](docs/capture-recovery.md), and [phone connection diagnosis](docs/phone-connection.md). The storage test runner is debug-only:
+Latest changes and reproducible checks: [reliability update](docs/reliability-update.md). Earlier evidence: [Phase 1 status](docs/phase1-status.md), [capture recovery](docs/capture-recovery.md), and [phone connection diagnosis](docs/phone-connection.md). The storage test runner is debug-only:
 
 ```powershell
 .\scripts\Test-StorageRecovery.ps1 -ConfirmDeviceTest
@@ -87,6 +89,8 @@ It writes synthetic 16 × 16 JPEG fixtures under this app's private `fieldlog/te
 Glasses records currently contain `phoneLocation: null`, `issueLocation: null`, `locationStatus: PENDING_CONFIRMATION`, and `phoneConnectionStatus: NOT_CONFIGURED_PHASE1`. A successful local photo save never means it has been synchronized or geolocated.
 
 Capture timestamps identify the app's request/completion interval, **not the sensor exposure time**. Unknown recovered timestamps remain null. The test glasses' wall clock differs from the actual date; it has not been changed. Phase 2 must preserve raw clocks and estimate clock offset and uncertainty. Uptime values from different devices cannot be compared directly.
+
+`captureWallClockStatus: CONSISTENT_INTERVAL` checks only one interval, not the absolute date. `photoSha256` is a content fingerprint, not a signature or proof of time/location. Older complete records without a saved fingerprint remain unchanged. Recovery-generated fingerprints are labeled as a verification of the current bytes, not an original-capture fingerprint.
 
 Phone fixes record WGS84 coordinates, accuracy when available, fix time, monotonic fix age, permission level, and source. Mock, stale, future, non-finite, or out-of-range observations are rejected. The photographer's position is an observation; the issue's actual position must be independently confirmed or corrected on a map in Phase 3.
 

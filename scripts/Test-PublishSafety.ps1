@@ -1,9 +1,12 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+. (Join-Path $PSScriptRoot 'Invoke-ProjectNativeCapture.ps1')
 Push-Location $sourceRoot
 try {
-    $repositoryRoot = ((& git rev-parse --show-toplevel 2>$null) -join '').Trim()
-    if ($LASTEXITCODE -ne 0 -or [System.IO.Path]::GetFullPath($repositoryRoot) -ne $sourceRoot) {
+    $gitExecutable = (Get-Command git -ErrorAction Stop).Source
+    # --show-prefix avoids decoding an absolute Chinese path from native Git stdout.
+    $prefixRun = Invoke-ProjectNativeCapture -Executable $gitExecutable -NativeArguments @('rev-parse','--show-prefix')
+    if ($prefixRun.ExitCode -ne 0 -or ($prefixRun.Lines -join '').Trim() -ne '') {
         throw 'Initialize Git only in the RokidFieldLog project root first.'
     }
     $stagedPaths = @(& git -c core.quotepath=false diff --cached --name-only --diff-filter=ACMR)
