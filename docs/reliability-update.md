@@ -66,4 +66,8 @@ SHA-256 指纹检测已保存字节是否改变，不是数字签名，不能证
 | glasses-app-debug.apk | 7,782,190 bytes | 98fb3f51fcef6ed9a59d69b6e8acc4846d8ed228c71838b704567dd4331fc891 |
 | phone-app-debug.apk | 7,942,154 bytes | 35bc1de41816b8e6df66cd59faef55904a83825395879b483bb850864a76bd44 |
 
-APK 位于各模块 build/outputs/apk/debug，校验值仅对应本次构建。仍未验证：手机实机定位、物理触控板与佩戴光学体验、实际断电／满存储、正向删除、跨设备通信、地图／导出、AI 分类。源码中没有启用未经验收的模型。
+APK 位于各模块 build/outputs/apk/debug，校验值仅对应本次构建。已发布 [可安装预览包](https://github.com/PYCST-DDZYL/RokidFieldLog/releases/tag/v0.1.0-preview.2)，两个远端资产的 SHA-256 与本地相同。预览包是 debug APK，并非完整工作流或自动识别版本；下载不会自动安装或修改设备设置。
+
+新版第三项删除菜单也完成返回取消验证：7 条记录的字节内容保持不变，没有误拍或确认删除。
+
+仍未验证：手机实机定位、物理触控板与佩戴光学体验、实际断电／满存储、正向删除、跨设备通信、地图／导出、AI 分类。源码中没有启用未经验收的模型。

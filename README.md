@@ -37,6 +37,8 @@ Android Studio, Kotlin 2.2.21, Android Gradle Plugin 8.13.2, Gradle 8.13, and JD
 
 ## Build and run
 
+Installable debug APKs are available in [Phase 1 Preview 2](https://github.com/PYCST-DDZYL/RokidFieldLog/releases/tag/v0.1.0-preview.2). This is a prerelease with the limitations above. The glasses APK supports local photography and manual tags; the phone APK is an independent location probe. Downloading does not install anything or change device settings.
+
 See [installation and cleanup](docs/install.md) for a clean checkout, SDK license acceptance, device authorization, and uninstall instructions. 中文操作步骤见 [Phase 1 运行指南](docs/phase1-run.md)。
 
 From the project root in PowerShell, after preparing the project-local tools:
