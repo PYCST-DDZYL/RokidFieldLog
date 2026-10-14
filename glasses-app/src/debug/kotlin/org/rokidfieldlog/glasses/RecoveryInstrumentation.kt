@@ -211,7 +211,7 @@ class RecoveryInstrumentation : Instrumentation() {
                 passed++
             }
 
-            // A replacement JPEG with identical dimensions must not inherit old evidence.
+            // A full validation catches replacement even if filesystem timestamps are unchanged.
             run {
                 val root = caseRoot("valid-image-replaced")
                 val id = UUID.randomUUID().toString()
@@ -223,7 +223,7 @@ class RecoveryInstrumentation : Instrumentation() {
                 jpeg(File(root, "photos/$id.jpg"), android.graphics.Color.WHITE)
                 val changedBytes = File(root, "photos/$id.jpg").readBytes()
                 val restarted = PrivateCaptureStore(targetContext, root)
-                val report = restarted.recoverInterruptedCaptures()
+                val report = restarted.recoverInterruptedCaptures(forceFull = true)
                 check(report.incompleteCaptures == 1 && report.errors == 0 && restarted.savedPhotoCount() == 0)
                 val value = record(root, id)
                 check(value.getString("photoIntegrityStatus") == "HASH_MISMATCH")

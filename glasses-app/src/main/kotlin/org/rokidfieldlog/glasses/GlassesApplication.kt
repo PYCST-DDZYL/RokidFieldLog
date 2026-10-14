@@ -11,6 +11,7 @@ class GlassesApplication : Application(), CameraXConfig.Provider {
     // CameraX may deliver a save/error callback after its Activity was destroyed.
     // One process-owned queue accepts that callback and releases its capture lease.
     val captureFileExecutor = Executors.newSingleThreadExecutor { work -> Thread(work, "FieldLogFiles") }
+    val recoveryExecutor = Executors.newSingleThreadExecutor { work -> Thread(work, "FieldLogRecovery") }
     private val config = CameraXConfig.Builder.fromConfig(Camera2Config.defaultConfig())
         .setAvailableCamerasLimiter(CameraSelector.DEFAULT_BACK_CAMERA)
         .build()

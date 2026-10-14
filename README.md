@@ -1,116 +1,68 @@
 # Rokid FieldLog
 
-An open-source Kotlin project for recording neighborhood maintenance problems with Rokid Glasses and an Android phone.
+Record neighborhood maintenance problems with Rokid Glasses and an Android phone. 眼镜采集公共设施问题照片，手机辅助确认位置并准备政务材料。
 
-**Status: Phase 1 development preview.** Local photography has been tested on first-generation Rokid RG-glasses (Android 12 / API 32). The phone location probe builds, but has not yet been tested on a real phone. The test phone is currently disconnected; earlier USB diagnosis is documented separately. This preview does not yet provide the complete field-reporting workflow.
+The current Phase 1 preview takes and stores photos on the glasses, with manual issue tags and latest-photo review/undo. The phone app is a separate location probe. Cross-device synchronization, map correction, privacy editing and report export are planned; the complete reporting workflow is still in development.
 
-## Available now
+## Current status
 
-- An on-device glasses app using CameraX ImageCapture, without a camera preview.
-- Real JPEG capture into app-private storage, UUID records, original request/completion timestamps, and a short status message that hides automatically.
-- Durable capture journals, interrupted-write recovery, validation of saved images, and preservation of existing annotations during repair.
-- Human-selected quick tags for road damage, damaged facilities, litter, and other issues. Tags remain pending review; they are not AI recognition.
-- Saved-photo SHA-256 fingerprints and capture clock-interval checks. Changed bytes require review; raw timestamps are preserved.
-- A separate phone location probe: Fused Location Provider when Google Play services are available, Android system providers otherwise.
-- Location quality checks, cancellation, a 20-second deadline, and explicit null coordinates on failure. System fallback can also be selected manually.
-- A confirmed "delete all project data" action in each app. No shared storage permission or background location tracking.
+This is the single current status table. Changes are recorded in [CHANGELOG](CHANGELOG.md); earlier dated reports are historical evidence.
 
-**Not implemented:** glasses-to-phone communication, photo/location time matching across devices, phone photo browsing, a map, manual issue-position correction, phone category editing, notes, report export, and validated automatic issue recognition. AI assistance has now been requested, but no model has passed domain-specific acceptance tests; see [recognition readiness](docs/recognition-readiness.md). Servers, accounts, and automatic municipal submissions remain outside version 1.
-
-Bluetooth pairing alone does not grant access to phone GPS. Phase 2 must implement an explicit companion protocol using verified Rokid APIs. No Rokid SDK binary or invented SDK interface is included in this preview.
-
-## Project layout
-
-```text
-RokidFieldLog/
-  glasses-app/       On-device Android app, minSdk 31
-  phone-app/         Android companion location probe, minSdk 28
-  fieldlog-core/     Shared Kotlin validation and capture-journal logic
-  docs/             Feasibility, installation, testing, and known limitations
-  scripts/          Project-local Windows tooling and explicit device tests
-  gradle/wrapper/   Pinned Gradle wrapper with distribution checksum
-  .tools/           Local development tools; ignored by Git
-  .local/           Local caches and private device evidence; ignored by Git
-```
-
-Android Studio, Kotlin 2.2.21, Android Gradle Plugin 8.13.2, Gradle 8.13, and JDK 21 are used. Both apps compile against Android API 36. Windows PowerShell is the tested setup; other desktop operating systems have not been validated.
-
-## Build and run
-
-Installable debug APKs are available in [Phase 1 Preview 2](https://github.com/PYCST-DDZYL/RokidFieldLog/releases/tag/v0.1.0-preview.2). This is a prerelease with the limitations above. The glasses APK supports local photography and manual tags; the phone APK is an independent location probe. Downloading does not install anything or change device settings.
-
-See [installation and cleanup](docs/install.md) for a clean checkout, SDK license acceptance, device authorization, and uninstall instructions. 中文操作步骤见 [Phase 1 运行指南](docs/phase1-run.md)。
-
-From the project root in PowerShell, after preparing the project-local tools:
-
-```powershell
-.\scripts\Build.ps1 -Verify -Clean
-.\scripts\Open-AndroidStudio.ps1
-```
-
-Expected: `BUILD SUCCESSFUL` and an `APK verified` line for each module. Building does not install anything on a device. APKs are under each module's `build/outputs/apk/debug/` directory. Android Studio must use `.tools/jdk-21` for Gradle; its bundled Java 25 cannot run this pinned Gradle version.
-
-After authorizing installation on the intended device:
-
-```powershell
-.\scripts\Inspect-Devices.ps1
-.\scripts\Install-App.ps1 -Target glasses -ConfirmInstallation -StartApp
-# Run only when the physical phone has an authorized ADB connection:
-.\scripts\Install-App.ps1 -Target phone -ConfirmInstallation -StartApp
-```
-
-The scripts reject a missing or ambiguous device and verify the APK package and defined classes. Updates use `install -r` to retain this app's private data. They do not change USB settings or install drivers. Permit camera access for FieldLog and foreground precise or approximate location for FieldLog Companion when testing their respective functions.
-
-On the glasses, a single touchpad tap is mapped by Rokid firmware to Enter. Actual captures were triggered through ADB Enter on the test device; physical touchpad operation and optical readability still require user acceptance. On the phone, test outdoors using the automatic or Android-system location button. No phone result has been claimed as a successful hardware test yet.
-
-## Verification and limits
-
-| Check | Evidence |
+| Capability / check | Current state |
 | --- | --- |
-| Both debug APKs build, startup classes present | Passed |
-| Kotlin core tests | 26 passed |
-| Android Lint | No errors; dependency/style warnings remain |
-| Real glasses camera and private JPEG/JSON save | Passed on RG-glasses, 4032 × 3024 |
-| Cold restart, original records retained, prompt hidden | Passed |
-| Android storage recovery fixtures | 13 passed on the glasses; synthetic fixtures, not camera/GPS evidence |
-| Cancel a delete dialog with Back | Passed on the glasses; no deletion performed |
-| Physical touchpad gestures and optical display | Pending |
-| Real phone location, approximate permission, non-GMS phones | Pending |
-| Cross-device communication and reporting workflow | Not implemented |
+| Glasses photo capture and private JPEG/JSON storage | Implemented; previous preview tested on RG-glasses, Android 12 / API 32 |
+| Background recovery and capture without waiting | Implemented; cache, concurrency, repair and deletion JVM regressions passed |
+| Manual tags, category on save, review/undo, idle-camera release | Implemented; this revision needs physical touchpad and display acceptance |
+| Phone Fused/system location, 60-second deadline and provisional feedback | Implemented; real phone/GPS and non-GMS acceptance pending |
+| Core JVM tests, both debug APKs, Android Lint | 65 tests passed; both APKs built and package/classes verified; Lint 0 errors (13 warnings total) |
+| Linux GitHub Actions | Workflow added for pushes and pull requests; first remote run pending |
+| Submission channel | Official candidate research documented; target region/form acceptance pending |
+| Glasses-to-phone transfer and clock matching | Phase 2; actual Rokid SDK/device compatibility pending |
+| Phone record list, map, issue-point correction and notes | Phase 3 |
+| Third-party privacy review/redaction and channel-specific export | Phase 3; design/acceptance gates documented |
+| Battery/heat, JPEG-size comparison and field throughput | Device measurement protocol ready; measurements pending |
 
-Latest changes and reproducible checks: [reliability update](docs/reliability-update.md). Earlier evidence: [Phase 1 status](docs/phase1-status.md), [capture recovery](docs/capture-recovery.md), and [phone connection diagnosis](docs/phone-connection.md). The storage test runner is debug-only:
+## Try the preview
 
-```powershell
-.\scripts\Test-StorageRecovery.ps1 -ConfirmDeviceTest
-```
+The glasses app uses CameraX without a live camera preview. It stores photos in app-private storage, uses JPEG quality 93, and checks a 64 MiB space reserve before capture. Explicit capture input takes a photo; empty-background taps show the controls. The three main actions are capture, category and review/undo. Delete-all is inside data management with confirmation. Save feedback includes the captured category, which remains selected until changed.
 
-It writes synthetic 16 × 16 JPEG fixtures under this app's private `fieldlog/test-fixtures/` directory. They are excluded from production record scanning and photo counts. Real power loss, full storage, camera contention, and deletion failures have not been reproduced on hardware.
+Prompts hide automatically. After 60 seconds idle the camera releases; a capture input wakes it and the next input takes the photo. This behavior needs wearable-input and latency validation. Startup verifies changed/interrupted files in the background; unchanged verified photos use a size/mtime cache. Full validation is available for future export. File statistics and SHA-256 do not establish authentic time or location.
 
-## Location and time semantics
+Both apps disable Android backup and keep records inside their own private storage. No public gallery or unrelated files are accessed. Current photos have null phone/issue locations; a local save does not imply synchronization. Phone coordinates are WGS84 observations of the photographer; the issue point must later be confirmed separately.
 
-Glasses records currently contain `phoneLocation: null`, `issueLocation: null`, `locationStatus: PENDING_CONFIRMATION`, and `phoneConnectionStatus: NOT_CONFIGURED_PHASE1`. A successful local photo save never means it has been synchronized or geolocated.
+Installable APKs for the **older** [Phase 1 Preview 2](https://github.com/PYCST-DDZYL/RokidFieldLog/releases/tag/v0.1.0-preview.2) are available; they do not contain the unreleased changes described above. For the current source, build both APKs below. See [installation](docs/install.md) and the [中文运行指南](docs/phase1-run.md).
 
-Capture timestamps identify the app's request/completion interval, **not the sensor exposure time**. Unknown recovered timestamps remain null. The test glasses' wall clock differs from the actual date; it has not been changed. Phase 2 must preserve raw clocks and estimate clock offset and uncertainty. Uptime values from different devices cannot be compared directly.
+## Build and verify
 
-`captureWallClockStatus: CONSISTENT_INTERVAL` checks only one interval, not the absolute date. `photoSha256` is a content fingerprint, not a signature or proof of time/location. Older complete records without a saved fingerprint remain unchanged. Recovery-generated fingerprints are labeled as a verification of the current bytes, not an original-capture fingerprint.
+Use JDK 21, Android SDK platform 36 and Build Tools 35.0.0. The project pins Kotlin 2.2.21, AGP 8.13.2 and Gradle 8.13; the wrapper distribution has a checksum.
 
-Phone fixes record WGS84 coordinates, accuracy when available, fix time, monotonic fix age, permission level, and source. Mock, stale, future, non-finite, or out-of-range observations are rejected. The photographer's position is an observation; the issue's actual position must be independently confirmed or corrected on a map in Phase 3.
+On Linux/macOS, configure your installed SDK through ANDROID_HOME or local.properties and run:
 
-## Privacy and storage
+~~~sh
+./gradlew --no-daemon :fieldlog-core:test assembleDebug lintDebug
+~~~
 
-Photos, records, probe history, recovery backups, and test fixtures stay inside their owning app's private storage. Android backup and device-transfer backup are disabled for both apps. No public gallery, unrelated files, or other app data are accessed. Export through Android's system file picker is planned for Phase 3 and is not available in this preview.
+GitHub Actions runs this command on Ubuntu. On Windows, after preparing the project-local tools:
 
-The repository excludes tools, caches, APKs, photos, location records, device logs, keys, and local settings. Do not paste personal coordinates or device identifiers into issues. Use [the staged-file privacy check](CONTRIBUTING.md) before committing.
+~~~powershell
+.\scripts\Build.ps1 -Verify -Clean
+~~~
 
-## Roadmap
+The Windows script also checks both APK packages/startup classes. APKs are under each module's build/outputs/apk/debug/. Building does not install apps. Device scripts and private evidence collection still use PowerShell. Physical device tests are separate from CI.
 
-1. Complete Phase 1 with a real Android phone location test and wearable input acceptance.
-2. Verify actual Rokid CXR-L/CXR-S SDK compatibility; implement communication, clock matching, and failure handling.
-3. Add the phone record list, map correction, categories, notes, and user-selected report export.
-4. Complete installation documentation and release checks for the whole workflow. Source publication of this preview does not complete the earlier phases.
+## Project and design
 
-Official starting points: [Rokid developer documentation](https://developerdoc.rokid.com/sdk?lang=en), [CameraX configuration](https://developer.android.com/media/camera/camerax/configuration#camera-limiter), [Fused CurrentLocationRequest](https://developers.google.com/android/reference/com/google/android/gms/location/CurrentLocationRequest.Builder).
+- glasses-app: Android capture, private storage adapter and glasses controls (minSdk 31).
+- phone-app: foreground location provider adapters and diagnostic screen (minSdk 28).
+- fieldlog-core: typed records/codec, journals, recovery, clocks, location sources and orchestration with JVM tests.
+- docs and scripts: design, usage, device validation and Windows tools; .tools/.local are ignored local tools and private evidence.
+
+[Roadmap](docs/roadmap.md) defines phase acceptance. Before Phase 2, select a local channel and verify the complete form using the [one-page channel research](docs/submission-channels.md). V1 will generate user-reviewed materials for manual submission through an official channel. The [coordinate/privacy design](docs/coordinates-and-privacy.md) defines WGS84→map conversion, map-provider information, independent corrected issue coordinates, and redacted export copies. The [record contract](docs/record-format.md) defines typed fields, additive version compatibility and cache limits. The [field validation protocol](docs/field-validation.md) covers GPS, gestures, JPEG size, battery and heat.
+
+Bluetooth pairing alone does not provide phone GPS; Phase 2 needs a verified companion protocol. Automatic issue recognition requires the [separate model acceptance process](docs/recognition-readiness.md). Accounts, cloud photo storage and automatic municipal submissions remain outside V1.
+
+Contributors should read [CONTRIBUTING](CONTRIBUTING.md), run the checks, and review staged files for private data before pushing. Do not commit photos, raw coordinates, device identifiers, logs or keys.
 
 ## License
 
-Project source is licensed under [MIT](LICENSE). The Gradle wrapper retains its [Apache license and bundled dependency notices](gradle/wrapper/LICENSE), with the [Gradle NOTICE](gradle/wrapper/NOTICE). Android, Google Play services, and any future Rokid SDK remain subject to their respective licenses. This project is independent and is not an official Rokid product.
+[MIT](LICENSE) covers project source. The [Gradle wrapper license](gradle/wrapper/LICENSE) and [notices](gradle/wrapper/NOTICE), Android/Google dependencies and any future Rokid SDK retain their own licenses. This is an independent project.

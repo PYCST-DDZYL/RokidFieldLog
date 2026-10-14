@@ -1,5 +1,8 @@
 # Phase 1：最小实现与验收计划
 
+> 历史记录：保留本次版本之前的调查、计划和测试证据；当前状态只维护在 [README 状态表](../README.md#current-status)，版本变化见 [CHANGELOG](../CHANGELOG.md)，现行验收计划见 [roadmap](roadmap.md)。下文时间、测试数量和交互描述不表示当前版本已通过。
+
+
 状态：两端 APK 构建及 Lint 通过；眼镜相机兼容问题已修复，真实照片保存、提示隐藏和冷启动后数据保留通过。手机尚未出现 ADB 接口，GPS 未实测。最新证据见 phase1-status.md；Phase 1 尚未完成。
 
 ## 第一阶段只验证两条独立路径

@@ -4,8 +4,12 @@ import android.content.Context
 import android.util.AtomicFile
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.Executors
 
 class PrivateProbeStore(context: Context) {
+    companion object {
+        val fileExecutor = Executors.newSingleThreadExecutor { work -> Thread(work, "FieldLogProbeFiles") }
+    }
     private val filesRoot = context.filesDir.canonicalFile
     private val root = File(filesRoot, "fieldlog")
     private val lastProbe = File(root, "last-probe.json")

@@ -26,16 +26,22 @@ class MainActivity : Activity() {
     private lateinit var cancelButton: Button
     private var pendingSystemMode = false
     private var screenVisible = false
+    private var requestSerial = 0
+    private var deleting = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         probe = LocationProbe(this)
         store = PrivateProbeStore(this)
         buildView()
-        val previous = store.last()
-        if (previous != null) {
-            try { showResult(previous, historical = true) }
-            catch (_: Exception) { resultView.text = "历史记录无法读取；可重新测试定位。" }
+        PrivateProbeStore.fileExecutor.execute {
+            val previous = store.last()
+            runOnUiThread {
+                if (previous != null && requestSerial == 0 && !isDestroyed && !isFinishing) {
+                    try { showResult(previous, historical = true) }
+                    catch (_: Exception) { resultView.text = "历史记录无法读取；可重新测试定位。" }
+                }
+            }
         }
     }
 
@@ -82,6 +88,7 @@ class MainActivity : Activity() {
     }
 
     private fun requestProbe(systemMode: Boolean) {
+        if (deleting) return
         pendingSystemMode = systemMode
         if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
             checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -90,13 +97,22 @@ class MainActivity : Activity() {
     }
 
     private fun startProbe(systemMode: Boolean) {
+        if (deleting) return
+        val serial = ++requestSerial
         setBusy(true)
         resultView.text = getString(R.string.locating)
-        probe.start(systemMode) { result ->
+        probe.start(systemMode, onProgress = { update ->
+            val accuracy = update.observation.accuracyMeters?.let { "约 " + it.toInt() + " 米" } ?: "精度未知"
+            resultView.text = "已收到拍摄者位置（$accuracy），继续等待更准确的结果…最多 60 秒。问题实际位置仍待确认。"
+        }) { result ->
             setBusy(false)
             showResult(result.data, historical = false)
-            try { store.save(result.data) }
-            catch (exception: Exception) { resultView.append("\n本次结果未能保存到私有存储。") }
+            PrivateProbeStore.fileExecutor.execute {
+                val saved = runCatching { store.save(result.data) }
+                if (saved.isFailure) runOnUiThread {
+                    if (!isDestroyed && screenVisible && requestSerial == serial && !deleting) resultView.append("\n本次结果未能保存到私有存储。")
+                }
+            }
         }
     }
 
@@ -117,6 +133,7 @@ class MainActivity : Activity() {
         val body = if (observation != null) {
             buildString {
                 append("定位成功 · 拍摄者位置测试\n")
+                if (data.optString("quality") == "BEST_AVAILABLE_AT_DEADLINE") append("等待结束，采用最近的低精度结果；仍需人工核对。\n")
                 append("纬度：${observation.getDouble("latitude")}\n")
                 append("经度：${observation.getDouble("longitude")}\n")
                 val accuracy = if (observation.isNull("accuracyMeters")) "未知" else String.format(Locale.ROOT, "%.1f 米", observation.getDouble("accuracyMeters"))
@@ -156,8 +173,21 @@ class MainActivity : Activity() {
             .setNegativeButton("取消", null)
             .setPositiveButton("删除") { _, _ ->
                 probe.cancel()
-                try { store.deleteAllProjectData(); resultView.text = "项目数据已删除。" }
-                catch (exception: Exception) { resultView.text = "删除未完成，请重试。" }
+                deleting = true
+                requestSerial++
+                setBusy(true)
+                cancelButton.isEnabled = false
+                resultView.text = "正在删除项目数据…"
+                PrivateProbeStore.fileExecutor.execute {
+                    val result = runCatching { store.deleteAllProjectData() }
+                    runOnUiThread {
+                        deleting = false
+                        if (!isDestroyed) {
+                            setBusy(false)
+                            resultView.text = if (result.isSuccess) "项目数据已删除。" else "删除未完成，请重试。"
+                        }
+                    }
+                }
             }.show()
     }
 

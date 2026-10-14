@@ -11,7 +11,7 @@ import java.util.zip.CRC32
 data class CaptureStamp(val photoId: String, val requestedUtcMillis: Long, val requestedElapsedNanos: Long)
 
 /** Journal and photo rename only. The Android caller validates JPEGs and writes JSON. */
-class CaptureFiles(private val root: File) {
+class CaptureFiles(private val root: File, private val recordExists: (String) -> Boolean = { false }) {
     private val photos = File(root, "photos")
     private val journals = File(root, "journals")
 
@@ -37,8 +37,7 @@ class CaptureFiles(private val root: File) {
         check(journals.isDirectory || journals.mkdirs()) { "Cannot create private journal directory" }
         val journal = File(journals, "${stamp.photoId}.journal")
         val temporary = File(journals, "${stamp.photoId}.journal.new")
-        val recordExists = listOf("json", "json.bak", "json.new").any { File(root, "records/${stamp.photoId}.$it").exists() }
-        check(!recordExists && !pending(stamp.photoId).exists() && !completed(stamp.photoId).exists() && !journal.exists() && !temporary.exists()) { "Capture ID already exists" }
+        check(!recordExists(stamp.photoId) && !pending(stamp.photoId).exists() && !completed(stamp.photoId).exists() && !journal.exists() && !temporary.exists()) { "Capture ID already exists" }
         val buffer = ByteArrayOutputStream()
         DataOutputStream(buffer).use {
             it.writeInt(MAGIC)
@@ -87,13 +86,19 @@ class CaptureFiles(private val root: File) {
         return completed
     }
 
-    fun ids(): Set<String> {
-        val names = listOf(photos, journals, File(root, "records")).flatMap { directory ->
+    fun exists(id: String): Boolean {
+        require(validId(id))
+        return pending(id).exists() || completed(id).exists() ||
+            File(journals, "$id.journal").exists() || File(journals, "$id.journal.new").exists()
+    }
+
+    fun ids(recordIds: Set<String> = emptySet()): Set<String> {
+        val names = listOf(photos, journals).flatMap { directory ->
             if (!directory.exists()) emptyList() else {
                 check(directory.isDirectory) { "Invalid private capture directory" }
                 checkNotNull(directory.listFiles()) { "Cannot read private capture directory" }.map { it.name }
             }
         }
-        return names.map { it.substringBefore('.') }.filter(::validId).toSet()
+        return names.map { it.substringBefore('.') }.filter(::validId).toSet() + recordIds.filter(::validId)
     }
 }

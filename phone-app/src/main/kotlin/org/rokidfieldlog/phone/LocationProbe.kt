@@ -11,7 +11,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.util.Log
 import androidx.core.location.LocationCompat
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
@@ -19,207 +18,123 @@ import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
-import org.rokidfieldlog.core.LocationQuality
-import org.rokidfieldlog.core.LocationAttempt
-import org.rokidfieldlog.core.LocationAttempt.Source
 import org.json.JSONObject
+import org.rokidfieldlog.core.*
 import java.util.UUID
 
+// The phone diagnostic screen still consumes JSON; the shared typed codec defines its wire format.
 data class ProbeResult(val data: JSONObject)
 
-/** Runs only while the diagnostic screen is visible. No background tracking. */
+/** Foreground Android providers. Request ownership/deadlines live in the JVM coordinator. */
 class LocationProbe(private val context: Context) {
     private val manager = context.getSystemService(LocationManager::class.java)
     private val handler = Handler(Looper.getMainLooper())
-    private var listener: LocationListener? = null
-    private var cancellation: CancellationTokenSource? = null
-    private var callback: ((ProbeResult) -> Unit)? = null
-    private var generation = 0
-    private var active = false
-    private var attempt: LocationAttempt? = null
-    private var lastRejection: String? = null
-    private var probeId = ""
-    private var requestedAt = 0L
-    private var requestedElapsed = 0L
-    private var permissionLevel = "NONE"
+    private val clock = object : FieldClock {
+        override fun utcMillis() = System.currentTimeMillis()
+        override fun elapsedNanos() = SystemClock.elapsedRealtimeNanos()
+    }
+    private var coordinator: LocationCoordinator? = null
 
     fun googleServicesAvailable(): Boolean = try {
         GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
     } catch (_: Exception) { false }
 
-    @SuppressLint("MissingPermission") // Both location grants checked before any provider is used.
-    fun start(forceSystem: Boolean, onResult: (ProbeResult) -> Unit) {
+    fun start(forceSystem: Boolean, onProgress: (LocationUpdate) -> Unit = {}, onResult: (ProbeResult) -> Unit) {
         cancel()
-        val operation = ++generation
-        callback = onResult
-        active = true
-        probeId = UUID.randomUUID().toString()
-        requestedAt = System.currentTimeMillis()
-        requestedElapsed = SystemClock.elapsedRealtimeNanos()
-        lastRejection = null
-        attempt = LocationAttempt(requestedElapsed)
-        permissionLevel = when {
+        val id = UUID.randomUUID().toString()
+        val requestedAt = clock.utcMillis()
+        val requestedElapsed = clock.elapsedNanos()
+        val permission = when {
             context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED -> "PRECISE"
             context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED -> "APPROXIMATE"
             else -> "NONE"
         }
-        if (permissionLevel == "NONE") { fail("PERMISSION_DENIED"); return }
+        fun report(completion: LocationCompletion) {
+            val record = LocationProbeRecord(probeId = id, status = completion.status,
+                requestedAtUtcMillis = requestedAt, requestedElapsedRealtimeNanos = requestedElapsed,
+                receivedAtUtcMillis = clock.utcMillis(), receivedElapsedRealtimeNanos = clock.elapsedNanos(),
+                permissionLevel = permission, source = completion.source.name, location = completion.observation,
+                reason = completion.reason, quality = completion.quality)
+            onResult(ProbeResult(JSONObject(CaptureRecordCodec.encodeProbe(record))))
+        }
+        fun fail(reason: String) = report(LocationCompletion("FAILED", LocationAttempt.Source.NONE, reason = reason))
+        if (permission == "NONE") { fail("PERMISSION_DENIED"); return }
         if (manager == null) { fail("PROVIDER_ERROR"); return }
         try {
             if (!manager.isLocationEnabled) { fail("LOCATION_DISABLED"); return }
         } catch (_: SecurityException) { fail("PERMISSION_DENIED"); return }
         catch (_: Exception) { fail("PROVIDER_ERROR"); return }
-        handler.postDelayed({ if (isCurrent(operation)) fail(lastRejection ?: "TIMEOUT") }, LocationAttempt.TOTAL_TIMEOUT_MILLIS)
-        if (forceSystem || !googleServicesAvailable()) {
-            startSystem(operation)
-            return
+        val scheduler = ProbeScheduler { delay, task ->
+            val runnable = Runnable { task() }
+            handler.postDelayed(runnable, delay)
+            CancelHandle { handler.removeCallbacks(runnable) }
         }
-        attempt!!.useFused()
-        cancellation = CancellationTokenSource()
-        val request = CurrentLocationRequest.Builder()
-            .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
-            .setMaxUpdateAgeMillis(0)
-            .setDurationMillis(LocationAttempt.FUSED_TIMEOUT_MILLIS)
-            .build()
-        // Preserve twelve seconds of the overall deadline for non-GMS providers.
-        // A Task can complete after cancellation; source guards reject that result.
-        handler.postDelayed({
-            if (isCurrent(operation) && attempt?.source == Source.FUSED) startSystem(operation)
-        }, LocationAttempt.FUSED_TIMEOUT_MILLIS)
-        try {
-            LocationServices.getFusedLocationProviderClient(context)
-                .getCurrentLocation(request, cancellation!!.token)
-                .addOnSuccessListener { location ->
-                    if (!callbackAllowed(operation, Source.FUSED)) return@addOnSuccessListener
-                    if (location != null && accept(location)) return@addOnSuccessListener
-                    startSystem(operation)
-                }
-                .addOnFailureListener {
-                    if (callbackAllowed(operation, Source.FUSED)) startSystem(operation)
-                }
-        } catch (exception: SecurityException) { fail("PERMISSION_DENIED") }
-        catch (exception: Exception) { startSystem(operation) }
+        val request = LocationCoordinator(clock, scheduler,
+            if (!forceSystem && googleServicesAvailable()) FusedSource() else null, SystemSource(permission))
+        coordinator = request
+        request.start(forceSystem, approximate = permission == "APPROXIMATE", onProgress = onProgress, onComplete = ::report)
     }
 
-    @SuppressLint("MissingPermission")
-    private fun startSystem(operation: Int) {
-        if (!isCurrent(operation)) return
-        val now = SystemClock.elapsedRealtimeNanos()
-        if (attempt!!.isExpired(now)) { fail("TIMEOUT"); return }
-        if (!attempt!!.useSystem(now)) return
-        cancellation?.cancel()
-        cancellation = null
-        val providers = try {
-            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).filter {
-                (it != LocationManager.GPS_PROVIDER || permissionLevel == "PRECISE") &&
-                    manager.allProviders.contains(it) && manager.isProviderEnabled(it)
-            }
-        } catch (_: SecurityException) { fail("PERMISSION_DENIED"); return }
-        catch (_: Exception) { fail("PROVIDER_ERROR"); return }
-        if (providers.isEmpty()) { fail("NO_ENABLED_PROVIDER"); return }
-        val registeredProviders = mutableSetOf<String>()
-        @Suppress("OVERRIDE_DEPRECATION") // Provider callbacks also support Android 9.
-        val systemListener = object : LocationListener {
-            override fun onLocationChanged(location: Location) {
-                if (callbackAllowed(operation, Source.ANDROID_SYSTEM)) accept(location)
-            }
-            override fun onProviderDisabled(provider: String) {
-                if (!isCurrent(operation)) return
-                try {
-                    if (registeredProviders.none { manager.isProviderEnabled(it) }) fail("LOCATION_DISABLED")
-                } catch (_: SecurityException) { fail("PERMISSION_DENIED") }
-                catch (_: Exception) { fail("PROVIDER_ERROR") }
-            }
-            override fun onProviderEnabled(provider: String) = Unit
-            @Deprecated("Required for devices running Android 9")
-            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
-        }
-        listener = systemListener
-        for (provider in providers) {
+    private fun observation(location: Location) = LocationObservation(
+        latitude = location.latitude, longitude = location.longitude, accuracyMeters = if (location.hasAccuracy()) location.accuracy else null,
+        locationTimeUtcMillis = location.time, locationElapsedRealtimeNanos = location.elapsedRealtimeNanos,
+        provider = location.provider ?: "unknown", isMock = LocationCompat.isMock(location),
+    )
+
+    private inner class FusedSource : LocationSource {
+        @SuppressLint("MissingPermission") // start() checks both grants before providers are subscribed.
+        override fun start(onFix: (LocationObservation) -> Unit, onUnavailable: (String) -> Unit): CancelHandle {
+            val cancellation = CancellationTokenSource()
+            val request = CurrentLocationRequest.Builder().setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+                .setMaxUpdateAgeMillis(0).setDurationMillis(LocationAttempt.FUSED_TIMEOUT_MILLIS).build()
             try {
-                manager.requestLocationUpdates(provider, 0L, 0f, systemListener, Looper.getMainLooper())
-                registeredProviders.add(provider)
-            } catch (_: SecurityException) { fail("PERMISSION_DENIED"); return }
-            catch (_: Exception) { /* Another already registered provider can still supply a fix. */ }
+                LocationServices.getFusedLocationProviderClient(context).getCurrentLocation(request, cancellation.token)
+                    .addOnSuccessListener { location ->
+                        if (location == null) onUnavailable("NO_FIX") else onFix(observation(location))
+                    }.addOnFailureListener { onUnavailable("PROVIDER_ERROR") }
+            } catch (_: SecurityException) { onUnavailable("PERMISSION_DENIED") }
+            catch (_: Exception) { onUnavailable("PROVIDER_ERROR") }
+            return CancelHandle { cancellation.cancel() }
         }
-        if (registeredProviders.isEmpty()) fail("PROVIDER_ERROR")
     }
 
-    private fun accept(location: Location): Boolean {
-        val receivedElapsed = SystemClock.elapsedRealtimeNanos()
-        val receivedAt = System.currentTimeMillis()
-        if (attempt!!.isExpired(receivedElapsed)) { fail("TIMEOUT"); return true }
-        if (LocationCompat.isMock(location)) {
-            lastRejection = "MOCK_LOCATION_REJECTED"
-            return false
+    private inner class SystemSource(private val permission: String) : LocationSource {
+        @SuppressLint("MissingPermission")
+        override fun start(onFix: (LocationObservation) -> Unit, onUnavailable: (String) -> Unit): CancelHandle {
+            val providers = try {
+                listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).filter {
+                    (it != LocationManager.GPS_PROVIDER || permission == "PRECISE") &&
+                        manager.allProviders.contains(it) && manager.isProviderEnabled(it)
+                }
+            } catch (_: SecurityException) { onUnavailable("PERMISSION_DENIED"); return CancelHandle {} }
+            catch (_: Exception) { onUnavailable("PROVIDER_ERROR"); return CancelHandle {} }
+            if (providers.isEmpty()) { onUnavailable("NO_ENABLED_PROVIDER"); return CancelHandle {} }
+            val registered = mutableSetOf<String>()
+            @Suppress("OVERRIDE_DEPRECATION")
+            val listener = object : LocationListener {
+                override fun onLocationChanged(location: Location) = onFix(observation(location))
+                override fun onProviderDisabled(provider: String) {
+                    try {
+                        if (registered.none { manager.isProviderEnabled(it) }) onUnavailable("LOCATION_DISABLED")
+                    } catch (_: SecurityException) { onUnavailable("PERMISSION_DENIED") }
+                    catch (_: Exception) { onUnavailable("PROVIDER_ERROR") }
+                }
+                override fun onProviderEnabled(provider: String) = Unit
+                @Deprecated("Required for Android 9")
+                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+            }
+            val cleanup = CancelHandle { try { manager.removeUpdates(listener) } catch (_: Exception) { } }
+            for (provider in providers) {
+                try {
+                    manager.requestLocationUpdates(provider, 0L, 0f, listener, Looper.getMainLooper())
+                    registered.add(provider)
+                } catch (_: SecurityException) { cleanup.cancel(); onUnavailable("PERMISSION_DENIED"); return CancelHandle {} }
+                catch (_: Exception) { /* A different registered provider may still supply a fix. */ }
+            }
+            if (registered.isEmpty()) onUnavailable("PROVIDER_ERROR")
+            return cleanup
         }
-        val accuracy = if (location.hasAccuracy()) location.accuracy else null
-        if (location.time <= 0) { lastRejection = "MISSING_LOCATION_TIME"; return false }
-        val rejection = LocationQuality.rejectionReason(location.latitude, location.longitude,
-            accuracy, location.elapsedRealtimeNanos, receivedElapsed)
-        if (rejection != null) { lastRejection = rejection; return false }
-        val observation = JSONObject()
-            .put("latitude", location.latitude)
-            .put("longitude", location.longitude)
-            .put("coordinateSystem", "WGS84")
-            .put("accuracyMeters", accuracy ?: JSONObject.NULL)
-            .put("locationTimeUtcMillis", location.time)
-            .put("locationElapsedRealtimeNanos", location.elapsedRealtimeNanos)
-            .put("ageAtReceiptMillis", (receivedElapsed - location.elapsedRealtimeNanos) / 1_000_000)
-            .put("provider", location.provider ?: "unknown")
-            .put("isMock", false)
-        finish(baseResult("SUCCESS", receivedAt, receivedElapsed).put("location", observation))
-        return true
     }
 
-    private fun baseResult(status: String, receivedAt: Long = System.currentTimeMillis(),
-        receivedElapsed: Long = SystemClock.elapsedRealtimeNanos()) = JSONObject()
-        .put("schemaVersion", 1)
-        .put("probeId", probeId)
-        .put("status", status)
-        .put("requestedAtUtcMillis", requestedAt)
-        .put("requestedElapsedRealtimeNanos", requestedElapsed)
-        .put("receivedAtUtcMillis", receivedAt)
-        .put("receivedElapsedRealtimeNanos", receivedElapsed)
-        .put("permissionLevel", permissionLevel)
-        .put("source", attempt?.source?.name ?: "NONE")
-        .put("glassesConnectionStatus", "NOT_CONFIGURED_PHASE1")
-        .put("location", JSONObject.NULL)
-
-    private fun fail(reason: String) = finish(baseResult("FAILED").put("reason", reason))
-
-    private fun finish(data: JSONObject) {
-        if (!active) return
-        active = false
-        attempt?.close()
-        Log.i("FieldLog", "LOCATION_RESULT status=${data.optString("status")} source=${data.optString("source")}")
-        cleanup()
-        val resultCallback = callback
-        callback = null
-        resultCallback?.invoke(ProbeResult(data))
-    }
-
-    fun cancel() {
-        if (active) finish(baseResult("CANCELLED").put("reason", "USER_OR_SCREEN_CLOSED"))
-    }
-
-    private fun cleanup() {
-        handler.removeCallbacksAndMessages(null)
-        cancellation?.cancel()
-        cancellation = null
-        listener?.let {
-            try { manager.removeUpdates(it) }
-            catch (_: Exception) { /* Providers or permissions may disappear during the request. */ }
-        }
-        listener = null
-    }
-
-    private fun isCurrent(operation: Int) = active && generation == operation
-
-    private fun callbackAllowed(operation: Int, source: Source): Boolean {
-        if (!isCurrent(operation)) return false
-        val now = SystemClock.elapsedRealtimeNanos()
-        if (attempt!!.isExpired(now)) { fail("TIMEOUT"); return false }
-        return attempt!!.canReceive(source, now)
-    }
+    fun cancel() { coordinator?.cancel(); coordinator = null }
 }

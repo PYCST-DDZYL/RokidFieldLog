@@ -1,5 +1,8 @@
 # 开发环境调查与工具准备方案
 
+> 历史记录：保留本次版本之前的调查、计划和测试证据；当前状态只维护在 [README 状态表](../README.md#current-status)，版本变化见 [CHANGELOG](../CHANGELOG.md)，现行验收计划见 [roadmap](roadmap.md)。下文时间、测试数量和交互描述不表示当前版本已通过。
+
+
 2026-10-13 已新增 Windows PowerShell 5.1 的 stderr／UTF-8 BOM 兼容修复和工具回归。最新测试结果见 [可靠性更新](reliability-update.md)，下面保留初次环境与历史证据。
 
 调查日期：2026-10-11（用户所在时区）。

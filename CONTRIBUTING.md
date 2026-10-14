@@ -10,6 +10,13 @@ The project is currently validating Phase 1. Keep changes within the active phas
 
 ## Check changes
 
+GitHub Actions runs the shared tests, both APK builds and Android Lint on Ubuntu. With JDK 21 and Android SDK 36 configured, Linux/macOS contributors can run:
+
+~~~sh
+./gradlew --no-daemon :fieldlog-core:test assembleDebug lintDebug
+~~~
+
+
 ```powershell
 .\scripts\Build.ps1 -Verify -Clean
 # Only after device-test authorization:

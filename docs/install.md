@@ -1,6 +1,6 @@
 # Installation, testing, and cleanup
 
-This is a Phase 1 preview: glasses photography and an independent phone location probe. There is no photo sync, map, or export UI yet. See [current verification](phase1-status.md) before installing.
+This is a Phase 1 preview: glasses photography and an independent phone location probe. There is no photo sync, map, or export UI yet. See [current status](../README.md#current-status) before installing.
 
 ## Windows development setup
 
@@ -29,7 +29,7 @@ On a phone, developer mode alone is insufficient: USB debugging and the device's
 .\scripts\Inspect-Devices.ps1
 ```
 
-The script hides serials. A `device` state permits debugging; `unauthorized` requires device-side approval. No matching phone means the phone install must wait. The current Samsung test phone exposes MTP and modem interfaces, but no ADB interface; see [diagnosis](phone-connection.md). Do not infer a working ADB connection from a working file-transfer connection.
+The script hides serials. A `device` state permits debugging; `unauthorized` requires device-side approval. No matching phone means the phone install must wait. The earlier Samsung test-phone diagnosis found MTP and modem interfaces, but no ADB interface; see [diagnosis](phone-connection.md). Do not infer a working ADB connection from a working file-transfer connection.
 
 ## Install and test the glasses app
 
@@ -39,7 +39,7 @@ After approving installation on the correct glasses:
 .\scripts\Install-App.ps1 -Target glasses -ConfirmInstallation -StartApp
 ```
 
-The script verifies the device, SDK level, package, and APK classes. `install -r` retains the app's data. Only FieldLog is started; nothing is uninstalled or cleared. Permit its camera permission. Stand still for a test photograph. Success should show a brief local-save message, then hide it. The record remains pending location confirmation.
+The script verifies the device, SDK level, package, and APK classes. `install -r` retains the app's data. Only FieldLog is started; nothing is uninstalled or cleared. Permit its camera permission. Stand still for a test photograph. Success should show a brief local-save message, then hide it. The save message includes the selected category. Empty-background taps reveal controls; use the capture button or touchpad Enter to take a photo. After 60 seconds idle, the first capture input wakes the camera and the next captures. Physical gestures and wake latency need validation. The record remains pending location confirmation.
 
 Private paths are `files/fieldlog/photos`, `records`, and `journals`. Only a debuggable build's own data can be inspected through Android Studio Device Explorer or `run-as org.rokidfieldlog.glasses`. Keep any copied evidence inside ignored `.local/`. Never dump or upload unrelated device data.
 
@@ -49,7 +49,7 @@ After authorizing synthetic storage tests on this app:
 .\scripts\Test-StorageRecovery.ps1 -ConfirmDeviceTest
 ```
 
-Expected: 13 passed. These tests do not take a photograph or obtain location, and do not delete production data. Fixtures stay in the app-private `fieldlog/test-fixtures` directory until the user clears the app's project data or uninstalls it. See the [latest reliability update](reliability-update.md).
+Expected: 13 passed. These tests do not take a photograph or obtain location, and do not delete production data. Fixtures stay in the app-private `fieldlog/test-fixtures` directory until the user clears the app's project data or uninstalls it. See the [record/recovery contract](record-format.md). This revision still needs Android fixture verification.
 
 ## Install and test the phone probe
 
@@ -59,7 +59,7 @@ After approving installation and confirming a physical phone with an authorized 
 .\scripts\Install-App.ps1 -Target phone -ConfirmInstallation -StartApp
 ```
 
-Permit foreground precise or approximate location. Outdoors, tap the automatic location test. It waits up to 8 seconds for Fused, then uses remaining time for system providers, with a 20-second total deadline. The Android-system button bypasses Fused. Leaving the screen or pressing Stop cancels the request. Failure saves a reason and null location, never fabricated coordinates.
+Permit foreground precise or approximate location. Outdoors, tap the automatic location test. It waits up to 8 seconds for Fused, then uses remaining time for system providers, with a 60-second total deadline. A valid low-precision observation is shown provisionally while waiting for a more accurate fix. At the deadline only a fix no older than 5 seconds can become a labeled best-available result. The Android-system button bypasses Fused. Leaving the screen or pressing Stop cancels the request. Failure saves a reason and null location, never fabricated coordinates.
 
 Historical results are labeled as history. The phone probe has not yet been hardware-tested, including no-Google-services behavior. The private latest-result check is:
 
@@ -71,7 +71,7 @@ This script only reads this package and hides coordinates in the terminal. Readi
 
 ## Delete and uninstall
 
-Each app offers **delete all project data**. Confirming Delete removes only that app's internal `files/fieldlog` subtree, including its own records, photos, recovery backups, and fixture data. Cancel and Back must preserve the data. Actual positive deletion has not been tested against production photos. App-private runtime caches, if present, are removed by Android's app storage clear or uninstall.
+The glasses app offers latest-photo review and confirmed undo. Its delete-all action is under Review → Data management; the phone has a separate delete-all button. Confirming Delete removes only that app's internal `files/fieldlog` subtree, including its own records, photos, recovery backups, and fixture data. Cancel and Back must preserve the data. Actual positive deletion has not been tested against production photos. App-private runtime caches, if present, are removed by Android's app storage clear or uninstall.
 
 Normal Android uninstall removes the app's private files, databases, and caches. Uninstall each FieldLog app through its device's normal app management UI or an explicitly authorized package uninstall. Do not use ADB shell commands to delete gallery or shared-storage directories. Reinstalling over an existing build retains private data; uninstalling normally removes it. ADB's keep-data uninstall option would retain data and is not used by this project.
 

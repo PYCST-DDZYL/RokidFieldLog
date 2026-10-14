@@ -10,7 +10,9 @@ class CaptureFilesTest {
     @get:Rule val temporary = TemporaryFolder(File("build/capture-tests").apply { mkdirs() })
     private val id = "00000000-0000-4000-8000-000000000001"
     private val stamp = CaptureStamp(id, 1234L, 5678L)
-    private fun store() = CaptureFiles(temporary.root)
+    private fun store() = CaptureFiles(temporary.root) { id ->
+        listOf("json", "json.bak", "json.new").any { File(temporary.root, "records/$id.$it").exists() }
+    }
 
     @Test fun crashBeforePhotoWritePreservesOriginalRequestWithoutInventingPhoto() {
         store().begin(stamp)
@@ -68,7 +70,7 @@ class CaptureFilesTest {
     @Test fun legacyRecordWithoutPhotoOrJournalIsIncludedInRecoveryScan() {
         val records = File(temporary.root, "records").apply { mkdirs() }
         File(records, "$id.json").writeText("{}")
-        assertTrue(store().ids().contains(id))
+        assertTrue(store().ids(setOf(id)).contains(id))
         assertFalse(store().completed(id).exists())
     }
 
@@ -84,7 +86,7 @@ class CaptureFilesTest {
         val records = File(temporary.root, "records").apply { mkdirs() }
         File(records, "$id.json.bak").writeText("recoverable annotation fixture")
         assertThrows(IllegalStateException::class.java) { store().begin(stamp) }
-        assertTrue(store().ids().contains(id))
+        assertTrue(store().ids(setOf(id)).contains(id))
         assertEquals("recoverable annotation fixture", File(records, "$id.json.bak").readText())
     }
 }

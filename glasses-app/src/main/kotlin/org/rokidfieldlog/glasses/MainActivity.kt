@@ -3,6 +3,7 @@ package org.rokidfieldlog.glasses
 import android.Manifest
 import android.app.AlertDialog
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.content.res.ColorStateList
 import android.graphics.drawable.ColorDrawable
@@ -16,6 +17,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.ImageView
 import android.widget.Button
 import android.widget.ArrayAdapter
 import android.widget.CheckedTextView
@@ -32,9 +34,9 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import java.io.File
 import java.util.UUID
 import org.rokidfieldlog.core.IssueCategory
+import org.rokidfieldlog.core.LowStorageException
 
 class MainActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
@@ -45,7 +47,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var count: TextView
     private lateinit var captureButton: Button
     private lateinit var categoryButton: Button
-    private lateinit var deleteButton: Button
+    private lateinit var reviewButton: Button
+    private var managing = false
+    private var screenVisible = false
     private var selectedAction = 0
     private var selectedCategory: IssueCategory? = null
     private var previousKeyCode = -1
@@ -57,20 +61,34 @@ class MainActivity : ComponentActivity() {
     private var recovering = true
     private var recoveryMessage = ""
     private var lastCaptureElapsed = 0L
-    private val hidePanel = Runnable { panel.visibility = View.INVISIBLE }
+    private val hidePanel = Runnable {
+        panel.visibility = View.INVISIBLE
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+    private val idleCamera = object : Runnable {
+        override fun run() {
+            if (capturing) { handler.postDelayed(this, 60_000); return }
+            imageCapture?.let { cameraProvider?.unbind(it) }
+            imageCapture = null
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) prepareCamera() else showStatus("摄像头权限未授予", 3_000)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowCompat.getInsetsController(window, window.decorView).hide(WindowInsetsCompat.Type.systemBars())
         store = PrivateCaptureStore(this)
         buildView()
-        showStatus("正在检查本机照片…")
-        fileExecutor.execute {
+        selectedCategory = savedInstanceState?.getString("category")?.let { name -> IssueCategory.entries.find { it.name == name } }
+        updateActionLabels(false)
+        showStatus("正在准备 · 后台检查照片")
+        if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) prepareCamera()
+        else cameraPermission.launch(Manifest.permission.CAMERA)
+        (application as GlassesApplication).recoveryExecutor.execute {
             val result = runCatching { store.recoverInterruptedCaptures() }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
@@ -84,8 +102,7 @@ class MainActivity : ComponentActivity() {
                         else -> ""
                     }
                 }, { "恢复检查失败 · 原文件保留" })
-                if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) prepareCamera()
-                else cameraPermission.launch(Manifest.permission.CAMERA)
+                if (!capturing && screenVisible) showStatus(recoveryMessage.ifEmpty { "已就绪 · " + categoryLabel(selectedCategory) }, 3_000)
             }
         }
     }
@@ -104,15 +121,15 @@ class MainActivity : ComponentActivity() {
         panel.addView(count)
         captureButton = outlineButton("拍照 / 单指点击") { capture() }
         categoryButton = outlineButton("问题类型：待确认") { chooseCategory() }
-        deleteButton = outlineButton("删除全部项目数据") { confirmDelete() }
+        reviewButton = outlineButton("回看 / 撤销上一张") { reviewLatest() }
         panel.addView(captureButton)
         panel.addView(categoryButton)
-        panel.addView(deleteButton)
+        panel.addView(reviewButton)
         val parameters = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.CENTER
         }
         root.addView(panel, parameters)
-        root.setOnClickListener { capture() }
+        root.setOnClickListener { showStatus("请选择拍照 · " + categoryLabel(selectedCategory), 5_000) }
         // View handles Enter as a click before Activity.onKeyUp unless intercepted.
         root.isFocusableInTouchMode = true
         root.setOnKeyListener { _, keyCode, event ->
@@ -146,12 +163,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun prepareCamera() {
-        if (preparingCamera || recovering || isDestroyed) return
+        if (preparingCamera || isDestroyed || isFinishing) return
         preparingCamera = true
         showStatus("正在准备摄像头…")
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
-            if (isDestroyed || isFinishing) {
+            if (isDestroyed || isFinishing || !screenVisible) {
                 preparingCamera = false
                 return@addListener
             }
@@ -160,13 +177,14 @@ class MainActivity : ComponentActivity() {
                 cameraProvider = provider
                 val capture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                    .setJpegQuality(100)
+                    .setJpegQuality(93)
                     .build()
                 imageCapture?.let { provider.unbind(it) }
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, capture)
                 imageCapture = capture
                 Log.i("FieldLog", "CAMERA_READY")
-                showStatus(recoveryMessage.ifEmpty { "已就绪 · 单指点击拍照" }, 3_000)
+                showStatus(recoveryMessage.ifEmpty { "已就绪 · " + categoryLabel(selectedCategory) }, 3_000)
+                scheduleCameraIdle()
             } catch (exception: Exception) {
                 imageCapture = null
                 Log.e("FieldLog", "CAMERA_INIT_FAILED", exception)
@@ -178,7 +196,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun capture() {
-        if (recovering || capturing || SystemClock.elapsedRealtime() - lastCaptureElapsed < 500) return
+        if (capturing || managing || SystemClock.elapsedRealtime() - lastCaptureElapsed < 500) return
         selectedAction = 0
         updateActionLabels(false)
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -191,50 +209,134 @@ class MainActivity : ComponentActivity() {
         val requestedAt = System.currentTimeMillis()
         val requestedElapsed = SystemClock.elapsedRealtimeNanos()
         val capturedCategory = selectedCategory
-        val pending: File
-        try { pending = store.pendingPhoto(photoId, requestedAt, requestedElapsed) }
-        catch (exception: Exception) { showStatus("私有存储不可用", 3_000); return }
         capturing = true
         lastCaptureElapsed = SystemClock.elapsedRealtime()
-        showStatus("正在拍摄…")
-        try {
-            camera.takePicture(ImageCapture.OutputFileOptions.Builder(pending).build(), fileExecutor,
-                object : ImageCapture.OnImageSavedCallback {
-                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                        val feedback = try {
-                            store.finishPhoto(photoId, pending, requestedAt, requestedElapsed, capturedCategory)
-                            Log.i("FieldLog", "CAPTURE_SAVED")
-                            "本机已保存 · 位置待确认"
-                        } catch (exception: Exception) {
-                            Log.e("FieldLog", "CAPTURE_SAVE_FAILED", exception)
-                            if (store.completedPhotoExists(photoId)) "照片已保存 · 重开恢复记录" else "保存未完成 · 原文件保留"
-                        }
-                        runOnUiThread {
-                            capturing = false
-                            if (!isDestroyed) showStatus(feedback, 1_500)
-                        }
-                    }
-                    override fun onError(exception: ImageCaptureException) {
-                        Log.e("FieldLog", "CAPTURE_FAILED", exception)
-                        store.abandonCapture(photoId)
-                        runOnUiThread {
-                            capturing = false
-                            if (!isDestroyed) showStatus("拍摄失败：${exception.imageCaptureError}", 3_000)
-                        }
-                    }
-                })
-        } catch (exception: Exception) {
-            store.abandonCapture(photoId)
-            capturing = false
-            showStatus("拍摄请求失败", 3_000)
+        handler.removeCallbacks(idleCamera)
+        showStatus("正在拍摄 · " + categoryLabel(capturedCategory))
+        // Journal creation, space checks and fsync must never run on the UI thread.
+        fileExecutor.execute {
+            val prepared = runCatching { store.pendingPhoto(photoId, requestedAt, requestedElapsed) }
+            runOnUiThread {
+                if (prepared.isFailure) {
+                    capturing = false
+                    if (!isDestroyed) showStatus(if (prepared.exceptionOrNull() is LowStorageException) "空间不足 · 请先清理项目照片" else "私有存储不可用", 3_000)
+                    scheduleCameraIdle()
+                    return@runOnUiThread
+                }
+                if (isDestroyed || isFinishing || !screenVisible) {
+                    fileExecutor.execute { store.abandonCapture(photoId) }
+                    capturing = false
+                    return@runOnUiThread
+                }
+                val pending = prepared.getOrThrow()
+                try {
+                    camera.takePicture(ImageCapture.OutputFileOptions.Builder(pending).build(), fileExecutor,
+                        object : ImageCapture.OnImageSavedCallback {
+                            override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                                val feedback = try {
+                                    store.finishPhoto(photoId, pending, requestedAt, requestedElapsed, capturedCategory)
+                                    Log.i("FieldLog", "CAPTURE_SAVED")
+                                    "已保存 · " + categoryLabel(capturedCategory)
+                                } catch (exception: Exception) {
+                                    Log.e("FieldLog", "CAPTURE_SAVE_FAILED", exception)
+                                    if (store.completedPhotoExists(photoId)) "照片已保存 · 重开恢复记录" else "保存未完成 · 原文件保留"
+                                }
+                                runOnUiThread {
+                                    capturing = false
+                                    if (!isDestroyed && screenVisible) { showStatus(feedback, 1_500); scheduleCameraIdle() }
+                                }
+                            }
+                            override fun onError(exception: ImageCaptureException) {
+                                store.abandonCapture(photoId)
+                                runOnUiThread {
+                                    capturing = false
+                                    if (!isDestroyed && screenVisible) { showStatus("拍摄失败", 3_000); scheduleCameraIdle() }
+                                }
+                            }
+                        })
+                } catch (_: Exception) {
+                    fileExecutor.execute { store.abandonCapture(photoId) }
+                    capturing = false
+                    showStatus("拍摄请求失败", 3_000)
+                    scheduleCameraIdle()
+                }
+            }
         }
+    }
+
+    private fun scheduleCameraIdle() {
+        handler.removeCallbacks(idleCamera)
+        if (!isDestroyed && screenVisible) handler.postDelayed(idleCamera, 60_000)
+    }
+
+    private fun reviewLatest() {
+        if (capturing || managing) return
+        managing = true
+        handler.removeCallbacks(hidePanel)
+        showStatus("正在读取上一张…")
+        fileExecutor.execute {
+            val loaded = runCatching {
+                val capture = store.latestSaved()
+                capture to capture?.let { BitmapFactory.decodeFile(it.file.path, BitmapFactory.Options().apply { inSampleSize = 8 }) }
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing || !screenVisible) { loaded.getOrNull()?.second?.recycle(); managing = false; return@runOnUiThread }
+                if (loaded.isFailure) { managing = false; showStatus("上一张读取失败", 3_000); return@runOnUiThread }
+                val (capture, bitmap) = loaded.getOrThrow()
+                val dialog = AlertDialog.Builder(this)
+                    .setTitle(if (capture == null) "暂无已验证照片" else "上一张 · " + categoryLabel(capture.category))
+                    .setNegativeButton("返回", null)
+                    .setNeutralButton("数据管理") { _, _ -> showDataManagement() }
+                if (bitmap != null) dialog.setView(ImageView(this).apply {
+                    setImageBitmap(bitmap)
+                    adjustViewBounds = true
+                    setPadding(12, 12, 12, 12)
+                })
+                if (capture != null) dialog.setPositiveButton("撤销这张") { _, _ ->
+                    AlertDialog.Builder(this)
+                        .setTitle("撤销刚才回看的照片？")
+                        .setMessage("删除这张照片及其记录。")
+                        .setNegativeButton("取消", null)
+                        .setPositiveButton("撤销") { _, _ -> deleteOne(capture.photoId) }
+                        .show()
+                }
+                dialog.create().apply {
+                    setOnDismissListener {
+                        bitmap?.recycle()
+                        managing = false
+                        if (!isDestroyed && screenVisible) showStatus("已就绪 · " + categoryLabel(selectedCategory), 3_000)
+                    }
+                    show()
+                }
+            }
+        }
+    }
+
+    private fun deleteOne(id: String) {
+        if (capturing || managing) return
+        managing = true
+        showStatus("正在撤销…")
+        fileExecutor.execute {
+            val result = runCatching { store.deleteCapture(id) }
+            runOnUiThread {
+                managing = false
+                if (!isDestroyed && screenVisible) showStatus(if (result.isSuccess) "已撤销上一张" else "撤销未完成 · 请重开检查", 3_000)
+            }
+        }
+    }
+
+    private fun showDataManagement() {
+        AlertDialog.Builder(this).setTitle("项目数据管理")
+            .setItems(arrayOf("删除全部项目数据")) { _, _ -> confirmDelete() }
+            .setNegativeButton("返回", null).show()
     }
 
     private fun showStatus(message: String, hideAfter: Long? = null) {
         handler.removeCallbacks(hidePanel)
         panel.visibility = View.VISIBLE
+        if (screenVisible) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         status.text = message
-        count.text = if (recovering) "正在检查本机文件 · 未同步手机" else getString(R.string.saved_photo_count, store.savedPhotoCount())
+        count.text = getString(R.string.saved_photo_count, store.savedPhotoCount()) + if (recovering) " · 后台检查中" else ""
         if (hideAfter != null) handler.postDelayed(hidePanel, hideAfter)
     }
 
@@ -268,7 +370,7 @@ class MainActivity : ComponentActivity() {
                 Log.d("FieldLog", "ENTER_ACTION selection=$selectedAction panelVisible=${panel.visibility == View.VISIBLE}")
                 when (if (panel.visibility == View.VISIBLE) selectedAction else 0) {
                     1 -> chooseCategory()
-                    2 -> confirmDelete()
+                    2 -> reviewLatest()
                     else -> capture()
                 }
             }
@@ -278,7 +380,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun confirmDelete() {
-        if (recovering || capturing) return
+        if (capturing || managing) return
         handler.removeCallbacks(hidePanel)
         val dialog = AlertDialog.Builder(this)
             .setCustomTitle(greenText("删除 FieldLog 本机数据？", 22f).apply { setPadding(20, 20, 20, 8) })
@@ -289,8 +391,15 @@ class MainActivity : ComponentActivity() {
                 selectedAction = 0
                 selectedCategory = null
                 updateActionLabels(false)
-                try { store.deleteAllProjectData(); showStatus("项目数据已删除", 1_500) }
-                catch (exception: Exception) { showStatus("删除未完成", 3_000) }
+                managing = true
+                showStatus("正在删除…")
+                fileExecutor.execute {
+                    val result = runCatching { store.deleteAllProjectData() }
+                    runOnUiThread {
+                        managing = false
+                        if (!isDestroyed && screenVisible) showStatus(if (result.isSuccess) "项目数据已删除" else "删除未完成", 3_000)
+                    }
+                }
             }.create()
         dialog.show()
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.BLACK))
@@ -320,11 +429,11 @@ class MainActivity : ComponentActivity() {
         fun marker(action: Int) = if (showMarker && selectedAction == action) "> " else ""
         captureButton.text = marker(0) + "拍照 / 单指点击"
         categoryButton.text = marker(1) + "问题类型：" + categoryLabel(selectedCategory)
-        deleteButton.text = marker(2) + "删除全部项目数据"
+        reviewButton.text = marker(2) + "回看 / 撤销上一张"
     }
 
     private fun chooseCategory() {
-        if (recovering || capturing) return
+        if (capturing || managing) return
         handler.removeCallbacks(hidePanel)
         val categories = listOf(null) + IssueCategory.entries
         val labels = categories.map(::categoryLabel).toTypedArray()
@@ -352,6 +461,27 @@ class MainActivity : ComponentActivity() {
         dialog.show()
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.BLACK))
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(Color.GREEN)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("category", selectedCategory?.name)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        screenVisible = true
+        if (panel.visibility == View.VISIBLE) showStatus("已就绪 · " + categoryLabel(selectedCategory), 3_000)
+        if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED && imageCapture == null) prepareCamera()
+    }
+
+    override fun onStop() {
+        screenVisible = false
+        handler.removeCallbacks(idleCamera)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        imageCapture?.let { cameraProvider?.unbind(it) }
+        imageCapture = null
+        super.onStop()
     }
 
     override fun onDestroy() {

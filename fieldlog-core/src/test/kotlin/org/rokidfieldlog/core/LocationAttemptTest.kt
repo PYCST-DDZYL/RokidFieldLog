@@ -13,8 +13,8 @@ class LocationAttemptTest {
         val request = LocationAttempt(started)
         request.useFused()
         assertTrue(request.useSystem(time(8_000)))
-        assertTrue(request.canReceive(Source.ANDROID_SYSTEM, time(19_999)))
-        assertFalse(request.canReceive(Source.ANDROID_SYSTEM, time(20_000)))
+        assertTrue(request.canReceive(Source.ANDROID_SYSTEM, time(59_999)))
+        assertFalse(request.canReceive(Source.ANDROID_SYSTEM, time(60_000)))
     }
 
     @Test fun fusedCallbackQueuedBeforeFallbackCannotOverwriteSystemResult() {
@@ -39,15 +39,15 @@ class LocationAttemptTest {
     @Test fun delayedMainThreadCannotAcceptFixAfterDeadlineEvenBeforeTimeoutRunnable() {
         val request = LocationAttempt(started)
         request.useFused()
-        assertTrue(request.isExpired(time(20_001)))
-        assertFalse(request.canReceive(Source.FUSED, time(20_001)))
-        assertFalse(request.useSystem(time(20_001)))
+        assertTrue(request.isExpired(time(60_001)))
+        assertFalse(request.canReceive(Source.FUSED, time(60_001)))
+        assertFalse(request.useSystem(time(60_001)))
     }
 
     @Test fun nonGmsRequestReceivesTheFullOverallWindow() {
         val request = LocationAttempt(started)
         assertTrue(request.useSystem(time(0)))
-        assertTrue(request.canReceive(Source.ANDROID_SYSTEM, time(19_999)))
+        assertTrue(request.canReceive(Source.ANDROID_SYSTEM, time(59_999)))
         assertFalse(request.canReceive(Source.FUSED, time(1)))
     }
 }

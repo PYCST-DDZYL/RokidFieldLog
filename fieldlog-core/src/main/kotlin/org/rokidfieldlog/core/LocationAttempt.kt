@@ -5,7 +5,7 @@ class LocationAttempt(private val startedElapsedNanos: Long) {
     enum class Source { NONE, FUSED, ANDROID_SYSTEM }
 
     companion object {
-        const val TOTAL_TIMEOUT_MILLIS = 20_000L
+        const val TOTAL_TIMEOUT_MILLIS = 60_000L
         const val FUSED_TIMEOUT_MILLIS = 8_000L
     }
 

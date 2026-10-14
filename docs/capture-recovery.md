@@ -1,5 +1,8 @@
 # 拍照中断恢复：实现与验证
 
+> 历史记录：保留本次版本之前的调查、计划和测试证据；当前状态只维护在 [README 状态表](../README.md#current-status)，版本变化见 [CHANGELOG](../CHANGELOG.md)，现行验收计划见 [roadmap](roadmap.md)。下文时间、测试数量和交互描述不表示当前版本已通过。
+
+
 本文保留 2026-10-12 的验证快照；最新指纹、快捷标签、时钟检查及 13 项存储测试见 [可靠性更新](reliability-update.md)。当前 Test-StorageRecovery.ps1 预期为 13 passed。
 
 更新：2026-10-12（用户所在时区）。本功能属于 Phase 1 的本机数据可靠性，不代表手机同步或定位已完成。
