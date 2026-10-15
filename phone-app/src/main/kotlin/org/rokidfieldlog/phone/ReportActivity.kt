@@ -179,7 +179,8 @@ class ReportActivity : InspectionScreen() {
         content.addView(OfflineUi.button(this, "删除这份材料草稿") {
             AlertDialog.Builder(this).setTitle("删除这份材料草稿？").setMessage("照片及问题历史继续保留，已保存到自选位置的文件由你管理。")
                 .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ ->
-                    task("正在删除材料草稿…", { store.reports.delete(value.reportId, value.revision) }) { finish() }
+                    val current = draft ?: return@setPositiveButton
+                    task("正在删除材料草稿…", { store.reports.delete(current.reportId, current.revision) }) { finish() }
                 }.show()
         })
         content.addView(OfflineUi.button(this, "保存草稿并返回") { save { finish() } })

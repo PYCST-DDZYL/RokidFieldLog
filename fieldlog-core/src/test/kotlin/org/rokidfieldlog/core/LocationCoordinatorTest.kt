@@ -32,10 +32,12 @@ class LocationCoordinatorTest {
         data class Subscription(val fix: (LocationObservation) -> Unit, val fail: (String) -> Unit, var cancelled: Boolean = false)
         val subscriptions = mutableListOf<Subscription>()
         var immediate: LocationObservation? = null
+        var immediateFailure: String? = null
         override fun start(onFix: (LocationObservation) -> Unit, onUnavailable: (String) -> Unit): CancelHandle {
             val subscription = Subscription(onFix, onUnavailable)
             subscriptions.add(subscription)
             immediate?.let(onFix)
+            immediateFailure?.let(onUnavailable)
             return CancelHandle { subscription.cancelled = true }
         }
         // Deliberately delivers even cancelled subscriptions to model queued platform callbacks.
@@ -119,14 +121,62 @@ class LocationCoordinatorTest {
         assertEquals("TARGET_ACCURACY_REACHED", results.single().quality)
     }
 
-    @Test fun deadlineCanUseRecentCoarseFixWithExplicitQuality() {
+    @Test fun deadlineCanUseRecentCoarseFixWithExplicitQualityAndOriginalReceiptAge() {
         start(force = true)
         time.advance(58_000)
-        system.emit(fix(500f))
+        system.emit(fix(500f).copy(locationElapsedRealtimeNanos = time.now - 1_000_000_000))
         time.advance(2_000)
         assertEquals("SUCCESS", results.single().status)
         assertEquals("BEST_AVAILABLE_AT_DEADLINE", results.single().quality)
         assertEquals(500f, results.single().observation!!.accuracyMeters)
+        assertEquals(1_000L, results.single().observation!!.ageAtReceiptMillis)
+    }
+
+    @Test fun systemFailureRetainsFreshProvisionalFusedFix() {
+        start()
+        fused.emit(fix(500f))
+        time.advance(1_000)
+        system.fail("NO_ENABLED_PROVIDER")
+        assertEquals("SUCCESS", results.single().status)
+        assertEquals(Source.FUSED, results.single().source)
+        assertEquals("BEST_AVAILABLE_PROVIDER_UNAVAILABLE", results.single().quality)
+        assertEquals(500f, results.single().observation!!.accuracyMeters)
+        assertEquals(0L, results.single().observation!!.ageAtReceiptMillis)
+        assertTrue(system.subscriptions.single().cancelled)
+        time.advance(60_000)
+        assertEquals(1, results.size)
+    }
+
+    @Test fun synchronousSystemFailureRetainsProvisionalFixAndReleasesHandle() {
+        system.immediateFailure = "NO_ENABLED_PROVIDER"
+        start()
+        fused.emit(fix(500f))
+        assertEquals("SUCCESS", results.single().status)
+        assertEquals(Source.FUSED, results.single().source)
+        assertTrue(system.subscriptions.single().cancelled)
+    }
+
+    @Test fun systemStartExceptionRetainsFreshProvisionalFix() {
+        val broken = object : LocationSource {
+            override fun start(onFix: (LocationObservation) -> Unit, onUnavailable: (String) -> Unit): CancelHandle {
+                throw IllegalStateException("Synthetic provider startup failure")
+            }
+        }
+        val request = LocationCoordinator(time, time, fused, broken)
+        request.start(false, onComplete = results::add)
+        fused.emit(fix(500f))
+        assertEquals("SUCCESS", results.single().status)
+        assertEquals("BEST_AVAILABLE_PROVIDER_UNAVAILABLE", results.single().quality)
+    }
+
+    @Test fun providerFailureNeverPromotesExpiredProvisionalFix() {
+        start()
+        fused.emit(fix(500f))
+        time.advance(6_000)
+        system.fail("NO_ENABLED_PROVIDER")
+        assertEquals("FAILED", results.single().status)
+        assertNull(results.single().observation)
+        assertEquals("NO_ENABLED_PROVIDER", results.single().reason)
     }
 
     @Test fun freshCoarseFixRemainsAvailableWhenMoreAccurateProvisionalFixExpires() {

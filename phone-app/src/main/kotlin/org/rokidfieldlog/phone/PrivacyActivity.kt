@@ -37,7 +37,7 @@ class PrivacyActivity : Activity() {
         task("正在读取照片…", {
             val loaded = store.library.load(id)
             Triple(loaded, store.uprightPreview(loaded.original), PhotoDigest.sha256(loaded.original))
-        }) { (loaded, bitmap, sourceHash) ->
+        }, onAbandoned = { it.second.recycle() }) { (loaded, bitmap, sourceHash) ->
             entry = loaded
             editingMasks = loaded.draft.photoReview?.takeIf { it.originalSha256 == sourceHash }?.masks ?: emptyList()
             restored?.takeIf { it.getLong("revision", -1) == loaded.draft.revision }?.getFloatArray("masks")?.let { values ->
@@ -62,8 +62,15 @@ class PrivacyActivity : Activity() {
             val loaded = entry ?: return@button
             task("正在生成不透明遮挡副本…", {
                 val review = store.renderReview(loaded, editingMasks)
-                val bitmap = checkNotNull(BitmapFactory.decodeFile(loaded.reviewFile(review.fileName).path))
-                review to bitmap
+                try {
+                    val bitmap = checkNotNull(BitmapFactory.decodeFile(loaded.reviewFile(review.fileName).path))
+                    review to bitmap
+                } catch (error: Exception) {
+                    store.library.discardReview(id, review.fileName)
+                    throw error
+                }
+            }, onAbandoned = { (review, bitmap) ->
+                bitmap.recycle(); store.library.discardReview(id, review.fileName)
             }) { (review, bitmap) -> candidate = review; image.setImage(bitmap); previewControls() }
         })
         controls.addView(OfflineUi.button(this, "返回记录") { finish() })
@@ -87,7 +94,11 @@ class PrivacyActivity : Activity() {
         })
         controls.addView(OfflineUi.button(this, "返回调整遮挡") {
             val loaded = entry ?: return@button
-            task("正在读取原图…", { store.uprightPreview(loaded.original) }) { bitmap -> image.setImage(bitmap, editingMasks); editingControls() }
+            task("正在读取原图…", {
+                val bitmap = store.uprightPreview(loaded.original)
+                runCatching { store.library.discardReview(id, review.fileName) }
+                bitmap
+            }, onAbandoned = { it.recycle() }) { bitmap -> image.setImage(bitmap, editingMasks); editingControls() }
         })
     }
     private fun zoomControls() = row(OfflineUi.button(this, "放大") { image.changeZoom(2f) },
@@ -97,13 +108,18 @@ class PrivacyActivity : Activity() {
         buttons.forEach { row.addView(it, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)) }
         controls.addView(row)
     }
-    private fun <T> task(message: String, action: () -> T, done: (T) -> Unit) {
+    private fun <T> task(message: String, action: () -> T, onAbandoned: ((T) -> Unit)? = null, done: (T) -> Unit) {
         if (busy) return
         busy = true; status.text = message; OfflineUi.enable(content, false); image.isEnabled = false
         PrivateProbeStore.fileExecutor.execute {
             val result = runCatching(action)
             runOnUiThread {
-                if (isDestroyed || isFinishing) return@runOnUiThread
+                if (isDestroyed || isFinishing) {
+                    result.onSuccess { value -> onAbandoned?.let { cleanup ->
+                        PrivateProbeStore.fileExecutor.execute { runCatching { cleanup(value) } }
+                    } }
+                    return@runOnUiThread
+                }
                 busy = false; OfflineUi.enable(content, true); image.isEnabled = true
                 result.fold(done) { status.text = OfflineUi.error(it) }
             }
@@ -117,5 +133,11 @@ class PrivacyActivity : Activity() {
         }
         super.onSaveInstanceState(out)
     }
-    override fun onDestroy() { if (::image.isInitialized) image.release(); super.onDestroy() }
+    override fun onDestroy() {
+        candidate?.let { review ->
+            PrivateProbeStore.fileExecutor.execute { runCatching { store.library.discardReview(id, review.fileName) } }
+        }
+        if (::image.isInitialized) image.release()
+        super.onDestroy()
+    }
 }

@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.content.Intent
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.text.InputFilter
 import android.text.InputType
 import android.widget.*
@@ -107,7 +108,8 @@ class IssueActivity : Activity() {
         })
         content.addView(OfflineUi.button(this, "保存单图人工提交材料") {
             saveForm {
-                task("正在校验照片和生成材料…", { store.library.prepareMaterial(id) }) { prepared ->
+                task("正在校验照片和生成材料…", { store.library.prepareMaterial(id) },
+                    onAbandoned = { store.library.discardMaterial(it) }) { prepared ->
                     pending = prepared
                     runCatching {
                         startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
@@ -171,22 +173,27 @@ class IssueActivity : Activity() {
                 }.show()
         }
     }
-    private fun <T> task(message: String, action: () -> T, done: (T) -> Unit) {
+    private fun <T> task(message: String, action: () -> T, onAbandoned: ((T) -> Unit)? = null, done: (T) -> Unit) {
         if (busy) return
         busy = true; status.text = message; OfflineUi.enable(content, false)
         PrivateProbeStore.fileExecutor.execute {
             val result = runCatching(action)
             runOnUiThread {
-                if (isDestroyed || isFinishing) return@runOnUiThread
+                if (isDestroyed || isFinishing) {
+                    result.onSuccess { value -> onAbandoned?.let { cleanup ->
+                        PrivateProbeStore.fileExecutor.execute { runCatching { cleanup(value) } }
+                    } }
+                    return@runOnUiThread
+                }
                 busy = false; OfflineUi.enable(content, true)
                 result.fold(done) { status.text = OfflineUi.error(it) }
             }
         }
     }
     private fun discardPending() {
-        val file = pending?.file ?: return
+        val prepared = pending ?: return
         pending = null
-        PrivateProbeStore.fileExecutor.execute { if (file.canonicalFile.parentFile == File(store.root, "exports").canonicalFile) file.delete() }
+        PrivateProbeStore.fileExecutor.execute { runCatching { store.library.discardMaterial(prepared) } }
     }
     @Deprecated("System document picker callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -196,18 +203,25 @@ class IssueActivity : Activity() {
         val uri = data?.data
         pending = null
         if (resultCode != RESULT_OK || uri == null) {
-            PrivateProbeStore.fileExecutor.execute { prepared.file.delete() }
+            PrivateProbeStore.fileExecutor.execute { runCatching { store.library.discardMaterial(prepared) } }
             status.text = "已取消材料保存"; return
         }
         task("正在写入你选择的位置…", {
+            var writeStarted = false
+            var copied = false
             try {
-                store.library.load(id)
-                require(prepared.file.canonicalFile.parentFile == File(store.root, "exports").canonicalFile)
-                require(PhotoDigest.sha256(prepared.file) == prepared.sha256) { "临时材料发生变化，请重新生成" }
-                checkNotNull(contentResolver.openOutputStream(uri, "w")).use { output -> prepared.file.inputStream().use { it.copyTo(output) } }
+                store.library.validatePrepared(prepared)
+                checkNotNull(contentResolver.openOutputStream(uri, "w")).use { output ->
+                    writeStarted = true
+                    prepared.file.inputStream().use { it.copyTo(output) }
+                }
+                copied = true
                 store.library.markExported(id, prepared.revision)
                 store.library.load(id)
-            } finally { prepared.file.delete() }
+            } catch (error: Exception) {
+                if (writeStarted && !copied) runCatching { DocumentsContract.deleteDocument(contentResolver, uri) }
+                throw error
+            } finally { store.library.discardMaterial(prepared) }
         }) { updated -> entry = updated; render(updated); status.text = "材料已保存，请到官方渠道人工提交。" }
     }
     override fun onSaveInstanceState(out: Bundle) {

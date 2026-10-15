@@ -216,6 +216,18 @@ class CaptureRepositoryTest {
         assertEquals(1, repository().apply { recover() }.savedPhotoCount())
     }
 
+    @Test fun failedDeletionJournalWriteRetainsSavedCountAndReviewablePhoto() {
+        val repo = repository()
+        val saved = save(repo)
+        val original = storage.read(saved.photoId)
+        storage.failWrites = true
+        assertThrows(IllegalStateException::class.java) { repo.deleteCapture(saved.photoId) }
+        assertEquals(1, repo.savedPhotoCount())
+        assertEquals(saved.photoId, repo.latestSaved()!!.photoId)
+        assertEquals(original, storage.read(saved.photoId))
+        assertTrue(photo(saved.photoId).isFile)
+    }
+
     @Test fun interruptedUndoTombstoneIsReplayedWithoutRestoringPhoto() {
         val saved = save()
         val old = record(saved.photoId)
@@ -271,10 +283,14 @@ class CaptureRepositoryTest {
 
     private class TestRecords(private val directory: File) : CaptureRecordStorage {
         val backups = mutableListOf<String>()
+        var failWrites = false
         override fun ids() = directory.listFiles()?.map { it.name.substringBefore('.') }?.filter(CaptureFiles::validId)?.toSet() ?: emptySet()
         override fun exists(id: String) = File(directory, "$id.json").exists()
         override fun read(id: String) = File(directory, "$id.json").takeIf { it.exists() }?.readText()
-        override fun write(id: String, text: String) { directory.mkdirs(); File(directory, "$id.json").writeText(text) }
+        override fun write(id: String, text: String) {
+            check(!failWrites) { "Synthetic metadata write failure" }
+            directory.mkdirs(); File(directory, "$id.json").writeText(text)
+        }
         override fun backup(id: String) { read(id)?.let { backups.add(it) } }
         override fun delete(id: String) { val file = File(directory, "$id.json"); check(!file.exists() || file.delete()) }
     }

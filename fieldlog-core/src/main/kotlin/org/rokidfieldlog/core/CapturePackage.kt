@@ -63,11 +63,17 @@ object CapturePackage {
         val manifest = GsonBuilder().setStrictness(Strictness.STRICT).create()
             .fromJson(manifestFile.readText(Charsets.UTF_8), JsonObject::class.java)
         requireNotNull(manifest)
-        require(manifest["format"]?.asString == "FIELDLOG_CAPTURE_PACKAGE" && manifest["version"]?.asInt == 1)
+        require(manifest["format"]?.asString == "FIELDLOG_CAPTURE_PACKAGE")
+        val version = manifest["version"]
+        require(version != null && version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.toString() == "1") {
+            "Unsupported capture package version"
+        }
         require(manifest["isSynthetic"]?.isJsonPrimitive == true && manifest["isSynthetic"].asJsonPrimitive.isBoolean)
         val synthetic = manifest["isSynthetic"].asBoolean
         val ids = names.filter { it.startsWith("records/") }.map { it.substringAfter('/').substringBefore('.') }.toSet()
-        require(ids.isNotEmpty() && ids.size <= MAX_RECORDS && manifest["recordCount"]?.asInt == ids.size)
+        val recordCount = manifest["recordCount"]
+        require(ids.isNotEmpty() && ids.size <= MAX_RECORDS && recordCount != null &&
+            recordCount.isJsonPrimitive && recordCount.asJsonPrimitive.isNumber && recordCount.toString() == ids.size.toString())
         require(names == ids.flatMap { listOf("records/$it.json", "photos/$it.jpg") }.toSet() + "fieldlog-package.json") { "Records and photos do not match" }
         val captures = ids.map { id ->
             val document = CaptureRecordCodec.decode(File(staging, "records/$id.json").readText(Charsets.UTF_8))

@@ -16,7 +16,7 @@ This is the single current status table. Changes are recorded in [CHANGELOG](CHA
 | Background recovery and capture without waiting | Implemented; cache, concurrency, repair and deletion JVM regressions passed |
 | Manual tags, category on save, review/undo, idle-camera release | Implemented; this revision needs physical touchpad and display acceptance |
 | Phone Fused/system location, 60-second deadline and provisional feedback | Implemented; real phone/GPS and non-GMS acceptance pending |
-| Core JVM tests, both debug APKs, Android Lint | 130 tests passed; both APKs built and package/classes verified; Lint 0 errors; physical Android UI acceptance pending |
+| Core JVM tests, both debug APKs, Android Lint | 148 tests passed; both APKs built and package/classes verified; Lint 0 errors; physical Android UI acceptance pending |
 | Linux GitHub Actions | Ubuntu 24.04 workflow prepares the Android SDK, then tests, builds and lints; see [current runs](https://github.com/PYCST-DDZYL/RokidFieldLog/actions) |
 | Submission channel | Official candidate research documented; target region/form acceptance pending |
 | Glasses-to-phone transfer and clock matching | Phase 2; actual Rokid SDK/device compatibility pending |

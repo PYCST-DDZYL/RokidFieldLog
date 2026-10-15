@@ -6,6 +6,8 @@ The source of truth is fieldlog-core's CaptureRecord, LocationObservation, GeoPo
 
 Each capture is UTF-8 JSON with schemaVersion 1 and a lowercase UUID photoId. Unknown positions and times are explicitly null. Fields added in this update are optional on read. Defaults apply through explicit Gson InstanceCreator factories, with Unsafe disabled and stable SerializedName annotations. A future schema version or invalid typed record is retained and reported for review. Truncated JSON can be backed up and reconstructed from the journal and image; a foreign photoId is never adopted.
 
+Capture and issue-draft schema versions, and package manifest versions/counts, require JSON integer tokens. Fractional values and numeric strings are rejected before conversion. Non-null issue positions require numeric latitude/longitude; explicit null axes cannot become default zero coordinates. An entirely null position remains unknown, while actual numeric zero coordinates are valid.
+
 | Group | Fields / semantics |
 | --- | --- |
 | Identity and state | photoId, relative photoFile, captureState: SAVED / RECOVERED / INCOMPLETE / DELETED; photoIntegrityStatus: VERIFIED / HASH_MISMATCH / UNREADABLE / MISSING |
@@ -30,9 +32,9 @@ Undo targets the photo ID shown in the review dialog. A DELETED record is commit
 
 ## Phone probe
 
-LocationProbeRecord retains the previous schemaVersion/probeId/status/requested/received/permission/source/location fields and adds nullable quality. SUCCESS quality is TARGET_ACCURACY_REACHED (at most 50 m with precise permission), APPROXIMATE_PERMISSION, or BEST_AVAILABLE_AT_DEADLINE (recent valid lower precision). Quality is an estimate, not confirmed issue location. FAILED and CANCELLED have null location. A provisional callback is shown while waiting and is not saved as a final successful fix.
+LocationProbeRecord retains the previous schemaVersion/probeId/status/requested/received/permission/source/location fields and adds nullable quality. SUCCESS quality is TARGET_ACCURACY_REACHED (at most 50 m with precise permission), APPROXIMATE_PERMISSION, BEST_AVAILABLE_AT_DEADLINE (recent valid lower precision), or BEST_AVAILABLE_PROVIDER_UNAVAILABLE (a still-fresh fix retained when the system provider fails). Quality is an estimate, not confirmed issue location. FAILED and CANCELLED have null location. A provisional callback is shown while waiting and is not saved as a final successful fix until completion rules accept it.
 
-The total deadline is 60 seconds on the same device's monotonic clock. Fused gets at most 8 seconds; its failure, low precision fix or deadline switches to Android providers. Cancellation, request identity and source ownership reject late callbacks. At the deadline, only a valid provisional fix no older than 5 seconds can become a labeled best-available result; older observations remain excluded.
+The total deadline is 60 seconds on the same device's monotonic clock. Fused gets at most 8 seconds; its failure, low precision fix or deadline switches to Android providers. Cancellation, request identity and source ownership reject late callbacks. At the deadline or a system-provider failure, only a valid provisional fix no older than 5 seconds at completion can become a labeled best-available result; older observations remain excluded. Its ageAtReceiptMillis still records the original callback age.
 
 ## Offline capture package
 

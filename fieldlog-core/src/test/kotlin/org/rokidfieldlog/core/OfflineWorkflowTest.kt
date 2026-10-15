@@ -162,6 +162,22 @@ class OfflineWorkflowTest {
         assertTrue(library.list().isEmpty())
     }
 
+    @Test fun fractionalOrStringPackageVersionAndCountCannotBeSilentlyCoerced() {
+        val members = mutableListOf<Pair<String, ByteArray>>()
+        ZipInputStream(ByteArrayInputStream(bundle())).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                members += entry.name to zip.readBytes(); zip.closeEntry()
+            }
+        }
+        for (field in listOf("version", "recordCount")) for (value in listOf("1.5", "\"1\"")) {
+            val changed = members.map { (name, bytes) -> name to if (name == "fieldlog-package.json")
+                bytes.toString(Charsets.UTF_8).replace("\"" + field + "\":1", "\"" + field + "\":" + value).toByteArray(Charsets.UTF_8) else bytes }
+            assertThrows(IllegalArgumentException::class.java) { library.importPackage(ByteArrayInputStream(customZip(changed))) }
+            assertTrue(library.list().isEmpty())
+        }
+    }
+
     @Test fun exportRequiresAddressDateCategoryAndActualPhotoReview() {
         val entry = imported()
         assertTrue(MaterialReadiness.reasons(entry.draft).size >= 4)
@@ -188,6 +204,77 @@ class OfflineWorkflowTest {
         val entry = reviewed(completedDraft(imported()))
         jpeg(entry.reviewFile(entry.draft.photoReview!!.fileName), Color.GREEN)
         assertThrows(IllegalArgumentException::class.java) { library.prepareMaterial(id) }
+    }
+
+    @Test fun pendingSinglePhotoMaterialRejectsEditsBeforeWritingExternalDocument() {
+        val entry = reviewed(completedDraft(imported()))
+        val prepared = library.prepareMaterial(id)
+        library.validatePrepared(prepared)
+        library.save(entry.draft.copy(description = "Synthetic corrected description"), entry.draft.revision)
+        assertThrows(IllegalArgumentException::class.java) { library.validatePrepared(prepared) }
+        library.discardMaterial(prepared)
+        assertFalse(prepared.file.exists())
+    }
+
+    @Test fun pendingSinglePhotoMaterialRejectsNewPrivacyApproval() {
+        val entry = reviewed(completedDraft(imported()))
+        val prepared = library.prepareMaterial(id)
+        val updated = reviewed(entry)
+        assertThrows(IllegalArgumentException::class.java) { library.validatePrepared(prepared) }
+        assertTrue(updated.reviewFile(updated.draft.photoReview!!.fileName).isFile)
+    }
+
+    @Test fun pendingSinglePhotoMaterialRechecksOriginalAndReviewedPixels() {
+        val entry = reviewed(completedDraft(imported()))
+        val prepared = library.prepareMaterial(id)
+        val original = entry.original.readBytes()
+        jpeg(entry.original, Color.BLUE)
+        assertThrows(IllegalArgumentException::class.java) { library.validatePrepared(prepared) }
+        entry.original.writeBytes(original)
+        jpeg(entry.reviewFile(entry.draft.photoReview!!.fileName), Color.GREEN)
+        assertThrows(IllegalArgumentException::class.java) { library.validatePrepared(prepared) }
+    }
+
+    @Test fun pendingSinglePhotoMaterialRejectsAlteredArchiveAndOutsideCleanup() {
+        reviewed(completedDraft(imported()))
+        val prepared = library.prepareMaterial(id)
+        prepared.file.appendText("Synthetic altered archive")
+        assertThrows(IllegalArgumentException::class.java) { library.validatePrepared(prepared) }
+        val outside = temp.newFile("unrelated.zip")
+        assertThrows(IllegalArgumentException::class.java) { library.discardMaterial(prepared.copy(file = outside)) }
+        assertTrue(outside.isFile)
+    }
+
+    @Test fun replacingApprovalRetiresOnlyOldApprovedCopy() {
+        val first = reviewed(imported())
+        val oldFile = first.reviewFile(first.draft.photoReview!!.fileName)
+        val second = reviewed(first)
+        assertFalse(oldFile.exists())
+        assertTrue(second.original.isFile)
+        assertTrue(second.reviewFile(second.draft.photoReview!!.fileName).isFile)
+        assertFalse(library.discardReview(id, second.draft.photoReview!!.fileName))
+        assertTrue(second.reviewFile(second.draft.photoReview!!.fileName).isFile)
+    }
+
+    @Test fun discardedPreviewCannotDeleteApprovedCopyOrOriginal() {
+        val entry = reviewed(imported())
+        val candidate = entry.reviewFile("review-" + UUID.randomUUID() + ".jpg")
+        entry.original.copyTo(candidate)
+        assertTrue(library.discardReview(id, candidate.name))
+        assertFalse(candidate.exists())
+        assertTrue(entry.original.isFile)
+        assertTrue(entry.reviewFile(entry.draft.photoReview!!.fileName).isFile)
+        assertThrows(IllegalArgumentException::class.java) { library.discardReview(id, "../original.jpg") }
+    }
+
+    @Test fun lateCleanupOfNowApprovedPreviewPreservesApproval() {
+        val entry = reviewed(imported())
+        val review = entry.draft.photoReview!!
+        val updated = reviewed(entry)
+        assertThrows(IllegalArgumentException::class.java) { library.approvePhoto(id, entry.draft.revision, review) }
+        assertEquals(updated.draft.photoReview, library.load(id).draft.photoReview)
+        assertFalse(library.discardReview(id, updated.draft.photoReview!!.fileName))
+        assertTrue(updated.reviewFile(updated.draft.photoReview!!.fileName).isFile)
     }
 
     @Test fun exifAndCommentsAreDetectedInOutputJpegHeaders() {

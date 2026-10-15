@@ -54,13 +54,13 @@ class LocationCoordinator(
             provider.start({ fix -> receive(request, source, fix) }, { reason ->
                 if (allowed(request, source)) {
                     if (source == Source.FUSED) startSystem(request)
-                    else finish(request, LocationCompletion("FAILED", source, reason = reason))
+                    else systemUnavailable(request, reason)
                 }
             })
         } catch (_: Exception) {
             if (allowed(request, source)) {
                 if (source == Source.FUSED) startSystem(request)
-                else finish(request, LocationCompletion("FAILED", source, reason = "PROVIDER_ERROR"))
+                else systemUnavailable(request, "PROVIDER_ERROR")
             }
             return
         }
@@ -110,18 +110,26 @@ class LocationCoordinator(
         }
     }
 
-    private fun deadline(request: Request) {
+    private fun systemUnavailable(request: Request, reason: String) {
         if (current !== request) return
+        if (!finishBestAvailable(request, "BEST_AVAILABLE_PROVIDER_UNAVAILABLE")) {
+            finish(request, LocationCompletion("FAILED", request.attempt.source, reason = reason))
+        }
+    }
+
+    private fun finishBestAvailable(request: Request, quality: String): Boolean {
         val now = clock.elapsedNanos()
         val best = request.recentFixes.filter {
             now - it.observation.locationElapsedRealtimeNanos!! in 0..LocationQuality.MAX_AGE_MILLIS * 1_000_000
         }.minWithOrNull(compareBy<LocationUpdate> { it.observation.accuracyMeters ?: Float.MAX_VALUE }
-            .thenByDescending { it.observation.locationElapsedRealtimeNanos })
-        val age = best?.observation?.locationElapsedRealtimeNanos?.let { clock.elapsedNanos() - it }
-        if (age != null && age in 0..LocationQuality.MAX_AGE_MILLIS * 1_000_000) {
-            finish(request, LocationCompletion("SUCCESS", best.source, best.observation,
-                quality = "BEST_AVAILABLE_AT_DEADLINE"))
-        } else finish(request, LocationCompletion("FAILED", request.attempt.source,
+            .thenByDescending { it.observation.locationElapsedRealtimeNanos }) ?: return false
+        finish(request, LocationCompletion("SUCCESS", best.source, best.observation, quality = quality))
+        return true
+    }
+
+    private fun deadline(request: Request) {
+        if (current !== request) return
+        if (!finishBestAvailable(request, "BEST_AVAILABLE_AT_DEADLINE")) finish(request, LocationCompletion("FAILED", request.attempt.source,
             reason = request.lastRejection ?: "TIMEOUT"))
     }
 

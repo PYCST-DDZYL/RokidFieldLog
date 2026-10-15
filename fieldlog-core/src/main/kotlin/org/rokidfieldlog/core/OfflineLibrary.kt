@@ -18,7 +18,8 @@ data class LibraryEntry(val source: RecordDocument, val draft: IssueDraft, val d
 }
 data class LibraryListing(val entries: List<LibraryEntry>, val unreadableCount: Int)
 data class ImportReport(val added: Int, val duplicates: Int)
-data class PreparedMaterial(val photoId: String, val revision: Long, val file: File, val sha256: String)
+data class PreparedMaterial(val photoId: String, val revision: Long, val file: File, val sha256: String,
+    val profile: MaterialProfile = MaterialProfile())
 
 /** All callers use one background queue. Imports commit as one folder rename. */
 class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
@@ -114,13 +115,27 @@ class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
 
     fun approvePhoto(id: String, expectedRevision: Long, review: PhotoReview): LibraryEntry {
         val entry = load(id)
+        require(entry.draft.revision == expectedRevision) { "照片记录已更新，请重新打开审阅" }
         val file = entry.reviewFile(review.fileName)
         require(review.masks.isNotEmpty() || review.noThirdPartyInformation) { "请确认照片是否需要遮挡" }
         review.masks.forEach { it.validate() }
         require(review.originalSha256 == entry.importedSha256 && PhotoDigest.sha256(entry.original) == entry.importedSha256) { "原图与导入时不一致，请保留记录并核查原始采集包" }
         require(PhotoDigest.sha256(file) == review.outputSha256 && file.length() == review.byteCount)
         require(inspector.dimensions(file) == (review.width to review.height) && !JpegPrivacy.hasPrivateMetadata(file))
-        return save(entry.draft.copy(photoReview = review.copy(reviewedAtUtcMillis = clock.utcMillis())), expectedRevision)
+        val saved = save(entry.draft.copy(photoReview = review.copy(reviewedAtUtcMillis = clock.utcMillis())), expectedRevision)
+        // Only retire the previous approved copy after the replacement is durably committed.
+        entry.draft.photoReview?.fileName?.takeIf { it != review.fileName }?.let { previous ->
+            runCatching { entry.reviewFile(previous).delete() }
+        }
+        return saved
+    }
+
+    /** Discard only this screen's unused preview; an approved copy must survive delayed cleanup. */
+    fun discardReview(id: String, fileName: String): Boolean {
+        val entry = load(id)
+        val file = entry.reviewFile(fileName)
+        if (entry.draft.photoReview?.fileName == fileName) return false
+        return !file.exists() || file.delete()
     }
 
     fun prepareMaterial(id: String, profile: MaterialProfile = MaterialProfile()): PreparedMaterial {
@@ -132,13 +147,32 @@ class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
         try {
             target.outputStream().use { MaterialExporter.write(it, entry.draft, entry.original, entry.reviewFile(review.fileName), inspector, profile) }
             RandomAccessFile(target, "rw").use { it.fd.sync() }
-            return PreparedMaterial(id, entry.draft.revision, target, PhotoDigest.sha256(target))
+            return PreparedMaterial(id, entry.draft.revision, target, PhotoDigest.sha256(target), profile)
         } catch (error: Exception) { target.delete(); throw error }
+    }
+
+    /** Run on the shared queue immediately before copying into the system-selected document. */
+    fun validatePrepared(prepared: PreparedMaterial) {
+        val exports = File(root, "exports").canonicalFile
+        require(prepared.file.canonicalFile.parentFile == exports &&
+            prepared.file.extension == "zip" && CaptureFiles.validId(prepared.file.nameWithoutExtension))
+        val entry = load(prepared.photoId)
+        require(entry.draft.revision == prepared.revision) { "说明或照片审阅已更新，请重新生成材料" }
+        val review = checkNotNull(entry.draft.photoReview) { "请先完成照片隐私审阅" }
+        require(review.originalSha256 == entry.importedSha256) { "原图与导入时不一致，无法导出" }
+        MaterialExporter.validate(entry.draft, entry.original, entry.reviewFile(review.fileName), inspector, prepared.profile)
+        require(PhotoDigest.sha256(prepared.file) == prepared.sha256) { "临时材料发生变化，请重新生成" }
+    }
+
+    fun discardMaterial(prepared: PreparedMaterial) {
+        require(prepared.file.canonicalFile.parentFile == File(root, "exports").canonicalFile &&
+            prepared.file.extension == "zip" && CaptureFiles.validId(prepared.file.nameWithoutExtension))
+        prepared.file.delete()
     }
 
     fun markExported(id: String, revision: Long) {
         val entry = load(id)
-        if (entry.draft.revision != revision) return // The exported snapshot remains valid; newer edits stay pending.
+        if (entry.draft.revision != revision) return // Completion must never label a newer edit as exported.
         if (entry.draft.stage == SubmissionStage.DRAFT) save(entry.draft.copy(stage = SubmissionStage.EXPORTED), revision)
     }
 

@@ -133,8 +133,15 @@ object CaptureRecordCodec {
 
     fun decode(text: String): RecordDocument = decodeObject(parse(text))
 
+    private fun requireVersion(original: JsonObject) {
+        val version = original["schemaVersion"]
+        require(version != null && version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.toString() == "1") {
+            "Unsupported record schema"
+        }
+    }
+
     private fun decodeObject(original: JsonObject): RecordDocument {
-        require(original["schemaVersion"]?.asInt == 1) { "Unsupported record schema" }
+        requireVersion(original)
         require(original["photoId"]?.isJsonPrimitive == true && CaptureFiles.validId(original["photoId"].asString))
         for (key in listOf("phoneLocation", "issueLocation")) {
             val location = original[key]?.takeUnless { it.isJsonNull } ?: continue
@@ -159,7 +166,7 @@ object CaptureRecordCodec {
 
     fun readForRecovery(text: String, id: String): RecordDocument? {
         val original = try { parse(text) } catch (_: JsonParseException) { return null }
-        require(original["schemaVersion"]?.asInt == 1) { "Unsupported record schema" }
+        requireVersion(original)
         if (original["photoId"]?.asString != id) return null
         return decodeObject(original)
     }

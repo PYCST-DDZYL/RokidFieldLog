@@ -218,9 +218,9 @@ class CaptureRepository(
     /** Caller selects the ID shown in the review dialog, so a later shot cannot change the target. */
     fun deleteCapture(id: String) = withId(id) {
         check(id !in state.active) { "Capture is still saving" }
-        state.verified.remove(id)
         val previous = checkNotNull(records.read(id)).let(CaptureRecordCodec::decode)
         save(previous.copy(record = previous.record.copy(captureState = CaptureState.DELETED, photoVerification = null)))
+        state.verified.remove(id)
         removeCaptureFiles(id)
     }
 

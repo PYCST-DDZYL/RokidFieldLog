@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1 Reliability fixes — Unreleased
+
+- Revalidate single-photo draft revisions, import-time original fingerprints, approved JPEGs and prepared ZIPs immediately before writing to the selected document. Changed text or privacy approval now requires regenerating materials. Clean abandoned temporary ZIPs and attempt to remove partially written external documents after copy failures.
+- Discard unused redaction previews when returning to editing or closing a screen. Retire an older approved JPEG only after its replacement is committed; delayed cleanup cannot delete the current approval or original. Forced process termination still requires later record/project cleanup for any orphaned files.
+- Use the current report revision when deleting a multi-photo draft after a save that did not redraw its controls.
+- Retain a valid provisional location when the Android provider fails or throws on startup, explicitly label its reduced quality, and continue rejecting fixes older than five seconds. Keep original callback age separate from result completion time.
+- Update the saved-photo count only after the deletion journal commits, retaining the count and reviewable photo on metadata write failure.
+- Reject null/string draft coordinate axes and fractional/string schema versions or package record counts before Gson can coerce them. Unknown positions remain distinct from genuine zero coordinates.
+- Bump the phone preview to 0.4.1-materials-preview (versionCode 5) and the glasses app to 0.1.1-phase1 (versionCode 2).
+
+Validation: 148 JVM tests passed, including 18 new regressions for stale materials, preview cleanup, provider failure, failed deletion writes and malformed JSON. Both debug APKs built and package/required DEX classes verified; Android Lint has 0 errors. Android gestures, rotation, document-provider failures, actual location and battery/heat acceptance still require devices.
+
 ## CI environment fix — 2026-10-15
 
 - Explicitly initialize Android command-line tools and install SDK 36 / Build Tools 35.0.0 before Gradle. The first remote run failed during SDK preparation with exit code 127, before tests started.

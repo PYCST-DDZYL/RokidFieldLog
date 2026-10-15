@@ -40,6 +40,14 @@ class CaptureRecordTest {
         assertThrows(IllegalArgumentException::class.java) { CaptureRecord(photoId = "../fixture") }
     }
 
+    @Test fun malformedSchemaVersionIsNotAcceptedOrRepairedAsVersionOne() {
+        for (version in listOf("1.5", "\"1\"")) {
+            val text = """{"schemaVersion":$version,"photoId":"$id"}"""
+            assertThrows(IllegalArgumentException::class.java) { CaptureRecordCodec.decode(text) }
+            assertThrows(IllegalArgumentException::class.java) { CaptureRecordCodec.readForRecovery(text, id) }
+        }
+    }
+
     @Test fun missingCoordinateAndUnknownEnumCannotTurnIntoInventedDefaults() {
         assertThrows(IllegalArgumentException::class.java) {
             CaptureRecordCodec.decode("""{"schemaVersion":1,"photoId":"$id","issueLocation":{"latitude":12.3}}""")

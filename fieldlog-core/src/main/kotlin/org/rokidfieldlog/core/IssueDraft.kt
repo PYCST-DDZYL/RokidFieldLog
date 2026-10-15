@@ -73,8 +73,16 @@ object DraftCodec {
     fun encode(draft: IssueDraft): String = gson.toJson(draft)
     fun decode(text: String, expectedId: String): IssueDraft {
         val tree = gson.fromJson(text, JsonObject::class.java) ?: error("Missing draft")
+        val version = tree["schemaVersion"]
+        require(version != null && version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.toString() == "1") {
+            "Unsupported draft schema"
+        }
         tree["issuePosition"]?.takeUnless { it.isJsonNull }?.asJsonObject?.let { point ->
-            require(point.has("latitude") && point.has("longitude") && point.has("coordinateSystem"))
+            for (axis in listOf("latitude", "longitude")) {
+                val value = point[axis]
+                require(value != null && value.isJsonPrimitive && value.asJsonPrimitive.isNumber) { "Missing numeric coordinate" }
+            }
+            require(point.has("coordinateSystem"))
         }
         val draft = gson.fromJson(tree, IssueDraft::class.java) ?: error("Missing draft")
         require(draft.schemaVersion == 1 && draft.photoId == expectedId && CaptureFiles.validId(expectedId))
