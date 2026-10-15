@@ -1,5 +1,10 @@
 # Changelog
 
+## CI environment fix — 2026-10-15
+
+- Explicitly initialize Android command-line tools and install SDK 36 / Build Tools 35.0.0 before Gradle. The first remote run failed during SDK preparation with exit code 127, before tests started.
+- Pin the runner to Ubuntu 24.04 and the Android setup action to its verified v4 commit. Remote validation results are available in [GitHub Actions](https://github.com/PYCST-DDZYL/RokidFieldLog/actions).
+
 ## 0.4.0 Multi-photo materials preview — Unreleased
 
 - Add persistent multi-photo report drafts with one recipient, receiver-specific category, address, landmark, manually confirmed visit date and description. Reuse existing manual text when starting from a record; photo tags do not silently become official categories.

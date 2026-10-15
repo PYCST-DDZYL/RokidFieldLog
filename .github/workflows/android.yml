@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
@@ -21,8 +21,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-provider: basic
-      - name: Install Android compile SDK
-        run: sdkmanager "platforms;android-36" "build-tools;35.0.0"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
       - name: Test, build and lint
         run: ./gradlew --no-daemon :fieldlog-core:test assembleDebug lintDebug -PfieldlogDemo=true
       - name: Upload verification reports
