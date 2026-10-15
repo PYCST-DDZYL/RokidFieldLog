@@ -51,3 +51,8 @@ Windows 配置项目内工具后，可使用同样的 Gradle 任务：
 fieldlogDemo 只让合成图片工作流测试把样例写入被忽略的 .local/offline-preview：SYNTHETIC-capture-package.zip、SYNTHETIC-material.zip、report.txt、summary.json 和 photo-reviewed.jpg。所有内容明确为演示，不含真实拍摄或定位。测试直接检查 ZIP 条目、黑色遮挡区域、源数据未进入材料、重复/冲突/路径穿越/解压上限、文件改变后拒绝导出以及草稿修订与回执状态。
 
 Android 侧还需按 [设备验证协议](field-validation.md) 验证四种旋转和四种镜像方向、远处小车牌、缩放画框边缘、进程重建、系统文件选择器取消/权限拒绝/磁盘满，以及导出后从文件管理器重新打开照片。没有模拟器或设备时不能把这些项记为通过。
+
+
+## 同一问题的多张照片
+
+首页新增“报修材料（环境照 + 细节照）”，可为一次现场观察统一填写接收方、分类、地址、参照物、日期和说明，并选入 2–5 张分别审阅的照片。原有单张记录与跨时间的问题历史继续独立；多图报修不会把维修前后自动混成一次观察。操作与限制见 [多图材料流程](multi-photo-materials.md)，真实价值按 [实用性验收](practical-product-scope.md) 评审。

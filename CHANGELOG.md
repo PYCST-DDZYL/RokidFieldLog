@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 Multi-photo materials preview — Unreleased
+
+- Add persistent multi-photo report drafts with one recipient, receiver-specific category, address, landmark, manually confirmed visit date and description. Reuse existing manual text when starting from a record; photo tags do not silently become official categories.
+- Add missing-material checks for 2–5 distinct photos, context/detail roles, a findable location, same-issue/same-visit confirmation, known date conflicts and independent privacy review. Roles and site/date judgments remain manual.
+- Export whitelisted shared text/JSON and reviewed JPEGs, excluding original GPS, private source fields, receipts and longitudinal repair history. Revalidate source/review fingerprints and draft/photo revisions immediately before external saving.
+- Protect photos referenced by report drafts, retain originals when deleting a report, preserve unreadable/future records, and discover AtomicFile companions for recovery/deletion safeguards. Isolate synthetic/real material and clear synthetic reports with demo records.
+- Add phone entry points, searchable/paged photo selection, editable roles, save-on-back and rotation state. Phone version is 0.4.0-materials-preview (versionCode 4). Android interaction acceptance remains pending.
+- Define a practical one-site product hypothesis and proposed first-pass usability/full-work-time measures. Add current official multi-photo channel evidence; no local form compatibility, field efficiency or paying customer is claimed.
+
+Validation: 130 JVM tests passed (20 new real-library multi-photo integration tests). Both debug APKs built; package/required DEX classes verified, including ReportActivity and ReportRepository, and the final phone manifest/version checked. Android Lint has 0 errors and 37 remaining warnings (11 glasses, 26 phone: UseKtx, SetTextI18n and a newer-API manifest attribute ignored on older Android). Synthetic report ZIP/text/manifest and both redacted JPEG fixtures were checked. Android UI, system picker/return gestures and field efficiency remain untested on a device.
+
 ## 0.3.0 Inspection preview — Unreleased
 
 - Add stable issue IDs with append-only, revision-checked observations, repair feedback and separate human verification. Original record receipt stages do not imply physical repair verification.

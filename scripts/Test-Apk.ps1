@@ -8,7 +8,7 @@ $requiredClasses = @("$expectedPackage.MainActivity")
 if ($Target -eq 'glasses') {
     $requiredClasses += @("$expectedPackage.GlassesApplication", "$expectedPackage.RecoveryInstrumentation", 'org.rokidfieldlog.core.CaptureFiles')
 } else {
-    $requiredClasses += @("$expectedPackage.LocationProbe", "$expectedPackage.LocationActivity", "$expectedPackage.IssueActivity", "$expectedPackage.PrivacyActivity", "$expectedPackage.RedactionView", "$expectedPackage.InspectionActivity", "$expectedPackage.InspectionLinkActivity", "$expectedPackage.InspectionCompareActivity", "$expectedPackage.InspectionSamples", 'org.rokidfieldlog.core.LocationAttempt', 'org.rokidfieldlog.core.OfflineLibrary', 'org.rokidfieldlog.core.MaterialExporter', 'org.rokidfieldlog.core.InspectionRepository')
+    $requiredClasses += @("$expectedPackage.LocationProbe", "$expectedPackage.LocationActivity", "$expectedPackage.IssueActivity", "$expectedPackage.PrivacyActivity", "$expectedPackage.RedactionView", "$expectedPackage.InspectionActivity", "$expectedPackage.InspectionLinkActivity", "$expectedPackage.InspectionCompareActivity", "$expectedPackage.InspectionSamples", "$expectedPackage.ReportActivity", 'org.rokidfieldlog.core.LocationAttempt', 'org.rokidfieldlog.core.OfflineLibrary', 'org.rokidfieldlog.core.MaterialExporter', 'org.rokidfieldlog.core.InspectionRepository', 'org.rokidfieldlog.core.ReportRepository')
 }
 Push-Location $projectRoot
 try {

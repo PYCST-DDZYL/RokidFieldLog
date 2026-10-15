@@ -102,7 +102,10 @@ class IssueActivity : Activity() {
             saveForm { startActivity(Intent(this, PrivacyActivity::class.java).putExtra("photoId", id)) }
         })
         content.addView(OfflineUi.text(this, "导出采用通用材料格式，一条记录一张 JPG、说明文本和归档清单；请再核对当地官方表单要求。"))
-        content.addView(OfflineUi.button(this, "保存人工提交材料") {
+        content.addView(OfflineUi.button(this, "用这张照片新建多图报修材料") {
+            saveForm { startActivity(Intent(this, ReportActivity::class.java).putExtra("create", true).putExtra("photoId", id)) }
+        })
+        content.addView(OfflineUi.button(this, "保存单图人工提交材料") {
             saveForm {
                 task("正在校验照片和生成材料…", { store.library.prepareMaterial(id) }) { prepared ->
                     pending = prepared

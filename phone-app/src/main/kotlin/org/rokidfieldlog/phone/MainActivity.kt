@@ -23,10 +23,11 @@ class MainActivity : Activity() {
         store = PhoneIssueStore(this)
         content = OfflineUi.column(this)
         content.addView(OfflineUi.text(this, "FieldLog", 28f))
-        content.addView(OfflineUi.text(this, "观察与复查", 22f))
-        content.addView(OfflineUi.text(this, "接续同一问题的现场观察，核对维修结果，整理人工提交材料。"))
+        content.addView(OfflineUi.text(this, "现场报修与复查", 22f))
+        content.addView(OfflineUi.text(this, "整理能找到现场、能看清问题的报修材料，并核对后续处理结果。"))
         status = OfflineUi.text(this, "正在读取记录…")
         content.addView(status)
+        content.addView(OfflineUi.button(this, "报修材料（环境照 + 细节照）") { if (!busy) startActivity(Intent(this, ReportActivity::class.java)) })
         content.addView(OfflineUi.button(this, "问题历史与待复查清单") { if (!busy) startActivity(Intent(this, InspectionActivity::class.java)) })
         content.addView(OfflineUi.button(this, "导入采集包") {
             if (!busy) runCatching {

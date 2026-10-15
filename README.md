@@ -1,8 +1,10 @@
 # Rokid FieldLog
 
-Observe the same maintenance problem over time, connect repair feedback, and review the evidence on return visits. 眼镜与手机记录步行设施问题，接续多次观察并人工复查处理结果。
+现场一次整理能找到位置、看清问题的报修材料，并在后续观察中核对处理结果。眼镜负责采集，手机负责整理、隐私审阅和人工提交准备。
 
-The glasses preview takes and stores photos with manual issue tags and latest-photo review/undo. The phone companion now imports private capture packages, lets you review and edit records, makes manually redacted JPEGs, and exports materials for manual submission. It also retains the independent location probe. The new inspection preview links multiple observations to a stable issue ID, separates repair feedback from human verification, and provides a recheck list and before/latest photo comparison. Association and verdicts remain manual. Glasses-to-phone wireless synchronization and map correction are still pending.
+Current product hypothesis: help a fixed-area inspector and a real maintenance recipient avoid missing photos, unclear locations and repeated entry. The [practical scope and acceptance plan](docs/practical-product-scope.md) defines how to compare against the existing phone/WeChat/form workflow; real-user value has not yet been measured.
+
+The glasses preview takes and stores photos with manual issue tags and latest-photo review/undo. The phone companion imports private capture packages, lets you review and edit records, makes manually redacted JPEGs, and exports materials for manual submission. A new multi-photo report combines 2–5 reviewed views with one recipient/category/address/landmark/date/description, checks missing context/detail views, and keeps a single visit separate from repair history. It also retains the independent location probe. The new inspection preview links multiple observations to a stable issue ID, separates repair feedback from human verification, and provides a recheck list and before/latest photo comparison. Association and verdicts remain manual. Glasses-to-phone wireless synchronization and map correction are still pending.
 
 ## Current status
 
@@ -14,7 +16,7 @@ This is the single current status table. Changes are recorded in [CHANGELOG](CHA
 | Background recovery and capture without waiting | Implemented; cache, concurrency, repair and deletion JVM regressions passed |
 | Manual tags, category on save, review/undo, idle-camera release | Implemented; this revision needs physical touchpad and display acceptance |
 | Phone Fused/system location, 60-second deadline and provisional feedback | Implemented; real phone/GPS and non-GMS acceptance pending |
-| Core JVM tests, both debug APKs, Android Lint | 110 tests passed; both APKs built and package/classes verified; Lint 0 errors; physical Android UI acceptance pending |
+| Core JVM tests, both debug APKs, Android Lint | 130 tests passed; both APKs built and package/classes verified; Lint 0 errors; physical Android UI acceptance pending |
 | Linux GitHub Actions | Workflow added for pushes and pull requests; first remote run pending |
 | Submission channel | Official candidate research documented; target region/form acceptance pending |
 | Glasses-to-phone transfer and clock matching | Phase 2; actual Rokid SDK/device compatibility pending |
@@ -23,10 +25,13 @@ This is the single current status table. Changes are recorded in [CHANGELOG](CHA
 | Before/latest photo comparison and manual verdict | Implemented; obstruction/unknown views remain pending; Android UI acceptance pending |
 | Map-based issue-point correction and coordinate conversion | Pending map-provider integration |
 | Manual privacy redaction, actual JPEG review and generic material export | Implemented; synthetic JVM workflow covers file/pixel checks; Android rendering acceptance pending |
+| Multi-photo report draft, context/detail checklist and shared text | Implemented offline; per-photo privacy and source/version checks; Android UI and real recipient acceptance pending |
 | Channel-specific classification/export | Pending a selected local form; current profile is generic manual materials |
 | Battery/heat, JPEG-size comparison and field throughput | Device measurement protocol ready; measurements pending |
 
 ## Try the preview
+
+Start with “报修材料（环境照 + 细节照）” on the phone home screen. Create a draft, name a real recipient, enter their category and a findable address/landmark, select context/detail photos from the same visit, and review every output JPEG. Save the ZIP, then extract the text and JPGs for manual entry into the recipient’s existing channel. Follow the [multi-photo guide](docs/multi-photo-materials.md). The app limit of 2–5 photos is not a universal government rule.
 
 The companion home screen now includes “问题历史与待复查清单” and “载入复查流程演示”. The synthetic workflow stops at an obstructed revisit, with another photo ready to attach and compare. Repair feedback never automatically closes an issue. Follow the [inspection guide](docs/inspection-workflow.md); the [single-site pilot protocol](docs/inspection-pilot.md) defines how to test real value and compare phone/glasses inputs. No field efficiency or customer payment outcome is claimed.
 

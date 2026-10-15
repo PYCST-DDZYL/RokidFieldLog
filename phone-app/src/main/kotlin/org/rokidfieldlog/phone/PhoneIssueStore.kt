@@ -34,7 +34,8 @@ class PhoneIssueStore(context: Context) {
         override fun utcMillis() = System.currentTimeMillis()
         override fun elapsedNanos() = android.os.SystemClock.elapsedRealtimeNanos()
     }
-    val library = OfflineLibrary(root, texts, inspector, clock, beforeDelete = { inspections.requireUnlinked(it) })
+    val library = OfflineLibrary(root, texts, inspector, clock, beforeDelete = { inspections.requireUnlinked(it); reports.requireUnlinked(it) })
+    val reports: ReportRepository by lazy { ReportRepository(root, texts, library, inspector) }
     val inspections: InspectionRepository by lazy {
         InspectionRepository(File(root, "issues"), texts, clock, InspectionEvidenceSource { id ->
             val entry = library.load(id)
@@ -42,8 +43,11 @@ class PhoneIssueStore(context: Context) {
         })
     }
     fun clearSyntheticRecords(): Int {
+        val materials = reports.scan()
+        check(materials.unreadableCount == 0) { "有报修材料无法读取，请保留数据并核查后再清除演示" }
         val listing = inspections.scan()
         check(listing.unreadableCount == 0) { "有问题历史无法读取，请保留数据并核查后再清除演示" }
+        materials.reports.filter { it.isSynthetic == true }.forEach { reports.delete(it.reportId, it.revision) }
         listing.issues.filter { it.isSynthetic }.forEach { inspections.deleteTracking(it.issueId, it.revision) }
         val ids = library.list().filter { it.draft.isSynthetic }.map { it.draft.photoId }
         ids.forEach { library.delete(it) }

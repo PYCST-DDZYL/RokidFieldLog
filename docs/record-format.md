@@ -55,3 +55,14 @@ TrackedIssue schemaVersion 1 has a stable issueId, siteLabel, category, immutabl
 InspectionState is derived from the latest event. Clear photographs with no visible original problem await verification; blocked/wrong-view/unusable observations require recheck. REPAIRED needs a repair claim followed by a new clear NO_VISIBLE_PROBLEM observation and human chronology confirmation. Later observations replace the current state without erasing historical verdicts. A new visible problem becomes OPEN. Duplicate photo IDs across issues and repeated SHA-256 within one issue cannot masquerade as new visits.
 
 InspectionRepository serializes commands on the same background queue as OfflineLibrary, validates metadata before AtomicFile commits, and verifies selected image fingerprints on association/comparison/verdict. The beforeDelete hook protects referenced photos. Lists read metadata without image decoding/hashing. Histories are bounded to 1000 events / 1 MiB; unsupported versions, unknown history keys and damaged metadata remain untouched and visible as an unreadable count. This strict history contract differs from source CaptureRecordCodec, which preserves unknown source annotations. Full inspection-history import/export is not implemented. See [inspection workflow](inspection-workflow.md).
+
+
+## 多图报修材料
+
+ReportDraft（schemaVersion 1）独立描述一个问题的一次现场材料，包含 reportId/revision、recipient、接收方自有 category 文本、address/landmark、eventDate/description、位置与同次观察的人工确认、ReportPhoto 列表及锁定的 isSynthetic 标记。ReportPhoto 只引用本机 photoId 与人工视角角色 CONTEXT/DETAIL/ADDITIONAL，不改写原始采集记录或复查历史。
+
+草稿允许未填写完成；导出需要 2–5 张不同原图、环境/细节角色、有效日期、明确位置/接收方及逐张隐私审阅。已人工登记的照片日期如与材料日期不同，需要核对。未知字段/版本拒绝改写并保留原文件；单份 JSON 限 64 KiB。接收方分类不自动由四个采集标签推断。
+
+ReportRepository 以 AtomicTextFiles 写入 offline/reports/<reportId>.json，扫描时同时考虑原子备份和临时伴随文件。照片引用阻止单张删除；删除草稿保留照片。导出前后校验参考的是草稿和照片各自的修订及指纹，不提供拍摄真实性证明。
+
+对外 FIELDLOG_MULTI_PHOTO_MATERIALS v1 仅包含 report.txt、summary.json 和 photo-01.jpg 等已审阅副本；JSON 白名单记录共用报修信息、照片角色及副本指纹，不带原始位置、设备字段、回执或维修历史。此格式供项目归档及手动填写外部渠道，未经当地验证不称为政务导入协议。详见 [多图材料流程](multi-photo-materials.md)。
