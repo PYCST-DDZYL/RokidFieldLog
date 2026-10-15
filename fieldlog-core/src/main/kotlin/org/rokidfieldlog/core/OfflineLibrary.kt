@@ -25,6 +25,7 @@ data class PreparedMaterial(val photoId: String, val revision: Long, val file: F
 class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
     private val inspector: ImageInspector, private val clock: FieldClock,
     private val beforeDelete: (String) -> Unit = {}) {
+    companion object { const val MAX_SELECTED_PHOTOS = 20 }
     private val collections = File(root, "collections")
     private fun itemDirectories(): List<File> = collections.listFiles()?.filter { it.isDirectory && CaptureFiles.validId(it.name) }
         ?.flatMap { File(it, "items").listFiles()?.toList() ?: emptyList() }
@@ -57,12 +58,56 @@ class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
     }
 
     fun importPackage(input: InputStream): ImportReport {
+        return importTransaction { staging ->
+            val unpacked = File(staging, "unpacked").apply { check(mkdirs()) }
+            CapturePackage.read(input, unpacked, inspector)
+        }
+    }
+
+    /** User-selected JPEG streams only. No inferred exposure time, location, category or privacy approval. */
+    fun importPhotos(sources: List<() -> InputStream>): ImportReport {
+        require(sources.size in 1..MAX_SELECTED_PHOTOS) { "每次请选择 1–20 张 JPEG 照片" }
+        return importTransaction(sources.size) { staging ->
+            var totalBytes = 0L
+            val captures = sources.mapIndexed { index, open ->
+                val file = File(staging, "selected-$index.jpg")
+                open().use { input ->
+                    file.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var bytes = 0L
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            bytes += count; totalBytes += count
+                            require(bytes <= CapturePackage.MAX_PHOTO_BYTES) { "单张照片不能超过 16 MiB" }
+                            require(totalBytes <= CapturePackage.MAX_TOTAL_BYTES) { "本批照片总大小超过 256 MiB" }
+                            check(root.usableSpace >= CaptureRepository.MIN_FREE_BYTES + count) { "空间不足，未导入本批照片" }
+                            output.write(buffer, 0, count)
+                        }
+                        output.fd.sync()
+                    }
+                }
+                require(CaptureFiles.hasJpegMarkers(file)) { "请选择完整的 JPEG 照片；本次未导入" }
+                val size = checkNotNull(inspector.dimensions(file)) { "照片损坏或尺寸过大，本次未导入" }
+                require(size.first > 0 && size.second > 0 && size.first.toLong() * size.second <= 24_000_000) { "照片不能超过 2400 万像素" }
+                val hash = PhotoDigest.sha256(file)
+                // Content identity makes re-selection idempotent without trusting filenames or EXIF.
+                val id = UUID.nameUUIDFromBytes(("FIELDLOG_SELECTED_JPEG_V1:" + hash).toByteArray(Charsets.UTF_8)).toString()
+                val record = CaptureRecord.pending(id, null).copy(width = size.first, height = size.second,
+                    captureTimeSource = "UNKNOWN_SELECTED_PHOTO", phoneConnectionStatus = "NOT_APPLICABLE_PHONE_IMPORT", photoSha256 = hash)
+                IncomingCapture(RecordDocument(record), file, hash)
+            }.distinctBy { it.document.record.photoId }
+            IncomingPackage(captures, isSynthetic = false)
+        }
+    }
+
+    private fun importTransaction(selectedCount: Int? = null, read: (File) -> IncomingPackage): ImportReport {
         check(root.isDirectory || root.mkdirs())
         check(root.usableSpace >= CaptureRepository.MIN_FREE_BYTES) { "空间不足" }
         val staging = File(root, "staging/" + UUID.randomUUID()).apply { check(mkdirs()) }
         try {
-            val unpacked = File(staging, "unpacked").apply { check(mkdirs()) }
-            val incoming = CapturePackage.read(input, unpacked, inspector)
+            val incoming = read(staging)
+            val itemCount = selectedCount ?: incoming.captures.size
             val existing = itemDirectories().groupBy { it.name }
             val fresh = incoming.captures.filter { capture ->
                 val matching = existing[capture.document.record.photoId]
@@ -78,11 +123,12 @@ class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
                 }
                 old == null
             }
-            if (fresh.isEmpty()) return ImportReport(0, incoming.captures.size)
+            if (fresh.isEmpty()) return ImportReport(0, itemCount)
             val transaction = File(staging, "collection").apply { check(mkdirs()) }
             for (capture in fresh) {
                 val id = capture.document.record.photoId
                 val directory = File(transaction, "items/$id").apply { check(mkdirs()) }
+                check(root.usableSpace >= capture.photo.length() + CaptureRepository.MIN_FREE_BYTES) { "空间不足，未导入本批记录" }
                 capture.photo.copyTo(File(directory, "original.jpg"))
                 RandomAccessFile(File(directory, "original.jpg"), "rw").use { it.fd.sync() }
                 texts.write(File(directory, "source.json"), CaptureRecordCodec.encode(capture.document))
@@ -91,7 +137,7 @@ class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
             }
             check(collections.isDirectory || collections.mkdirs())
             check(transaction.renameTo(File(collections, UUID.randomUUID().toString()))) { "Cannot commit imported collection" }
-            return ImportReport(fresh.size, incoming.captures.size - fresh.size)
+            return ImportReport(fresh.size, itemCount - fresh.size)
         } finally {
             check(staging.canonicalFile.toPath().startsWith(root.canonicalFile.toPath()))
             staging.deleteRecursively()

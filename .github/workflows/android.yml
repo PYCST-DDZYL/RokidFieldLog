@@ -34,6 +34,7 @@ jobs:
           name: verification-reports
           path: |
             fieldlog-core/build/reports/tests/
+            fieldlog-core/build/test-results/test/*.xml
             glasses-app/build/reports/lint-results-debug.*
             phone-app/build/reports/lint-results-debug.*
       - name: Upload synthetic offline preview

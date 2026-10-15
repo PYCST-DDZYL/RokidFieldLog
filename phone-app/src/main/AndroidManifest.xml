@@ -11,12 +11,19 @@
         android:label="FieldLog Companion"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <provider
+            android:name=".ReviewedPhotoProvider"
+            android:authorities="${applicationId}.reviewed-shares"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/reviewed_share_paths" />
+        </provider>
         <activity android:name=".ReportActivity" android:enableOnBackInvokedCallback="true" android:exported="false" />
         <activity android:name=".InspectionActivity" android:exported="false" />
         <activity android:name=".InspectionLinkActivity" android:exported="false" />
         <activity android:name=".InspectionCompareActivity" android:exported="false" />
         <activity android:name=".LocationActivity" android:exported="false" />
-        <activity android:name=".IssueActivity" android:exported="false" />
+        <activity android:name=".IssueActivity" android:enableOnBackInvokedCallback="true" android:exported="false" />
         <activity android:name=".PrivacyActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>

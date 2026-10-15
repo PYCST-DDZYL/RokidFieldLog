@@ -102,6 +102,51 @@ class ReportMaterialsTest {
         assertThrows(IllegalArgumentException::class.java) { reports.prepare(report.reportId) }
         assertFalse(File(root, "report-exports").exists())
     }
+    private fun shareCache() = ReviewedShareCache(File(root, "test-share-cache"), inspector, clock)
+
+    @Test fun nativeShareContainsOnlyIndependentReviewedPixelsAndPublicText() {
+        val report = ready()
+        val material = reports.prepareShare(report.reportId, shareCache())
+        assertEquals(2, material.photos.size)
+        assertEquals(setOf("photo-01.jpg", "photo-02.jpg"), material.directory.list()!!.toSet())
+        assertTrue(material.text.contains("合成演示")); assertTrue(material.text.contains(report.landmark))
+        for (privateValue in listOf("PRIVATE_REPORT_SENTINEL", "phoneLocation", "-45.6", "receipt", "original.jpg", "review-")) assertFalse(privateValue, material.text.contains(privateValue))
+        report.photos.forEachIndexed { index, photo ->
+            val entry = library.load(photo.photoId)
+            assertEquals(entry.draft.photoReview!!.outputSha256, PhotoDigest.sha256(material.photos[index]))
+            assertTrue(Color(ImageIO.read(material.photos[index]).getRGB(4, 4)).red < 20)
+            assertEquals(SubmissionStage.DRAFT, entry.draft.stage)
+            assertTrue(entry.original.isFile)
+        }
+        assertEquals(report, reports.load(report.reportId))
+        assertEquals(material.text, reports.submissionText(report.reportId))
+    }
+
+    @Test fun nativeShareRejectsAnyUnreviewedPhotoBeforeCreatingACache() {
+        val report = complete(review(imported(Color.RED)), imported(Color.BLUE))
+        assertThrows(IllegalArgumentException::class.java) { reports.prepareShare(report.reportId, shareCache()) }
+        assertFalse(File(root, "test-share-cache").exists())
+    }
+
+    @Test fun nativeShareRechecksBothOriginalAndApprovedBytes() {
+        val report = ready()
+        val entry = reports.selected(report).values.first()
+        val original = entry.original.readBytes()
+        jpeg(entry.original, Color.GREEN)
+        assertThrows(IllegalArgumentException::class.java) { reports.prepareShare(report.reportId, shareCache()) }
+        entry.original.writeBytes(original)
+        jpeg(entry.reviewFile(entry.draft.photoReview!!.fileName), Color.GREEN)
+        assertThrows(IllegalArgumentException::class.java) { reports.prepareShare(report.reportId, shareCache()) }
+    }
+
+    @Test fun copiedSubmissionTextUsesLatestSavedContentWithoutMarkingSubmission() {
+        val report = ready()
+        val updated = reports.save(report.copy(description = "SYNTHETIC revised recipient request"), report.revision)
+        val text = reports.submissionText(report.reportId)
+        assertTrue(text.contains(updated.description)); assertFalse(text.contains(report.description))
+        assertTrue(text.contains("不表示已提交或受理"))
+        assertEquals(updated, reports.load(report.reportId))
+    }
     @Test fun twoDetailPhotosDoNotSatisfyEnvironmentViewRequirement() {
         val report = ready()
         val changed = reports.save(report.copy(photos = report.photos.map { it.copy(role = ReportPhotoRole.DETAIL) }), report.revision)

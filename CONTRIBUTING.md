@@ -1,6 +1,10 @@
 # Contributing
 
-The project is currently validating Phase 1. Keep changes within the active phase and distinguish hardware evidence from unit tests and synthetic fixtures.
+当前重点是让一个真实报修事项顺利完成照片整理、隐私审阅、交接及复查。欢迎从 [问题反馈](https://github.com/PYCST-DDZYL/RokidFieldLog/issues/new/choose) 或 [本轮执行清单](docs/practical-product-scope.md#current-work) 开始。先说明具体使用障碍、预期行为及验证方法，改动尽量围绕一个可复现问题。
+
+手机端的真实照片入口采用系统选择器。照片只在明确选择后复制到本应用私有存储；分享通过独立已审阅副本及临时读取授权完成。不要把 FileProvider 扩大到整个私有目录、存储根目录或原图库。导出或唤起分享面板不等于已受理或维修完成。
+
+Keep hardware evidence distinct from unit tests and synthetic fixtures. Offline companion work is active; wireless glasses integration, maps and real recipient acceptance remain separate validation work.
 
 - Use Kotlin and the existing Android modules. Keep project tools, temporary evidence, and test assets within the project root.
 - Verify Rokid API names and compatibility against official documentation and the actual distributed SDK before adding an integration. An SDK mismatch blocks that integration; do not replace it with a claimed successful mock.

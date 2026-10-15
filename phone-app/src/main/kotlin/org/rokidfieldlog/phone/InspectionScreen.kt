@@ -17,13 +17,18 @@ abstract class InspectionScreen : Activity() {
         status = OfflineUi.text(this, "正在读取…"); content.addView(status)
         OfflineUi.install(this, content)
     }
-    protected fun <T> task(message: String, action: () -> T, done: (T) -> Unit) {
+    protected fun <T> task(message: String, action: () -> T, onAbandoned: ((T) -> Unit)? = null, done: (T) -> Unit) {
         if (busy) return
         busy = true; status.text = message; OfflineUi.enable(content, false)
         PrivateProbeStore.fileExecutor.execute {
             val result = runCatching(action)
             runOnUiThread {
-                if (isDestroyed || isFinishing) return@runOnUiThread
+                if (isDestroyed || isFinishing) {
+                    result.onSuccess { value -> onAbandoned?.let { cleanup ->
+                        PrivateProbeStore.fileExecutor.execute { runCatching { cleanup(value) } }
+                    } }
+                    return@runOnUiThread
+                }
                 busy = false; OfflineUi.enable(content, true)
                 result.fold(done) { status.text = OfflineUi.error(it) }
             }

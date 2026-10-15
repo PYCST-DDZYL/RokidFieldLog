@@ -170,6 +170,28 @@ class ReportActivity : InspectionScreen() {
         val reasons = ReportReadiness.reasons(value, entries)
         content.addView(OfflineUi.text(this, if (reasons.isEmpty()) "填写检查通过；保存材料前还会校验照片文件。" else "还需要：\n" + reasons.joinToString("\n") { "• " + it }))
         content.addView(OfflineUi.button(this, "保存草稿并检查缺项") { save { render(it) } })
+        content.addView(OfflineUi.button(this, "分享已审阅照片和说明") {
+            save { saved ->
+                task("正在校验并准备分享照片…", { store.reports.prepareShare(saved.reportId, store.shares) },
+                    onAbandoned = { store.shares.discard(it) }) { material ->
+                    runCatching { MaterialSharing.launch(this, material) }
+                        .onSuccess { status.text = "已打开系统分享。请核对接收方及照片；部分应用不接收附带文字，可另用复制说明。分享不表示已提交或受理。" }
+                        .onFailure {
+                            PrivateProbeStore.fileExecutor.execute { runCatching { store.shares.discard(material) } }
+                            status.text = "无法打开系统分享，请使用保存 ZIP 或复制说明。"
+                        }
+                }
+            }
+        })
+        content.addView(OfflineUi.button(this, "复制报修说明") {
+            save { saved ->
+                task("正在核对报修说明…", { store.reports.submissionText(saved.reportId) }) { text ->
+                    MaterialSharing.copyText(this, text)
+                    status.text = "已复制说明。请粘贴到接收方渠道，并另行附上已审阅照片。"
+                }
+            }
+        })
+        content.addView(OfflineUi.text(this, "分享后请自行确认接收方及受理情况。部分应用只接收照片，可以另用复制说明。"))
         content.addView(OfflineUi.button(this, "生成并保存报修材料") {
             save { saved ->
                 prepare(saved)
@@ -307,11 +329,11 @@ class ReportActivity : InspectionScreen() {
         if (resultCode != RESULT_OK || uri == null) { PrivateProbeStore.fileExecutor.execute { store.reports.discard(prepared) }; status.text = "已取消材料保存"; return }
         task("正在保存到你选择的位置…", {
             try {
-                store.reports.validatePrepared(prepared)
-                checkNotNull(contentResolver.openOutputStream(uri, "w")).use { output -> prepared.file.inputStream().use { it.copyTo(output) } }
-            } catch (error: Exception) {
-                runCatching { DocumentsContract.deleteDocument(contentResolver, uri) }
-                throw error
+                MaterialDocumentCopy.copy(
+                    validate = { store.reports.validatePrepared(prepared) },
+                    openInput = { prepared.file.inputStream() },
+                    openOutput = { checkNotNull(contentResolver.openOutputStream(uri, "w")) },
+                    deletePartial = { DocumentsContract.deleteDocument(contentResolver, uri) })
             } finally { store.reports.discard(prepared) }
         }) { status.text = "材料已保存。解压后将文字和照片填入接收方渠道；请自行确认受理情况。" }
     }

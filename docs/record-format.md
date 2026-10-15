@@ -42,6 +42,12 @@ FIELDLOG_CAPTURE_PACKAGE version 1 is a private transport-neutral ZIP, separate 
 
 OfflineLibrary stages and validates a complete import before one collection-folder rename. An interrupted staging folder is not visible as a collection. Same-ID/source/photo imports skip existing records and preserve edits; content conflicts fail the batch. A corrupted or duplicate on-disk identity is not overwritten during import. A separately persisted import-time SHA-256 binds the immutable original, including legacy sources without a recorded fingerprint; changed bytes cannot establish a new baseline at first review. Android AtomicFile owns source/draft commits; all adapters use one process-owned background queue.
 
+## Selected phone JPEGs
+
+OfflineLibrary.importPhotos accepts 1–20 explicitly selected streams, each bounded to 16 MiB and 24 million pixels, with a 256 MiB batch limit and the existing 64 MiB storage reserve. Copies and metadata remain under a staging transaction until a single collection rename commits. A provider read/permission failure, invalid JPEG, oversized image or metadata write failure exposes no partial batch. Original files in the system provider remain untouched.
+
+Selected photos use a deterministic UUID derived from the namespace FIELDLOG_SELECTED_JPEG_V1 and their import-time SHA-256. Exact-byte re-selection preserves existing drafts; changes under the same identity are conflicts, never overwrites. This identity is bookkeeping, not authenticity evidence. Source captureTimeSource is UNKNOWN_SELECTED_PHOTO; exposure clocks, phone/issue coordinates, category and privacy approval stay unknown. The source has validated pixel dimensions and photoSha256, with photoSha256Source null; an import check is not a camera-save claim. Selected-photo intake is a real-user ingress, separate from the explicitly synthetic sample loaders.
+
 ## Editable issue and privacy contract
 
 IssueDraft schemaVersion 1 is distinct from immutable source records. It stores photoId, optimistic revision, explicitly confirmed category/address/date, description, optional issuePosition with mandatory CRS, PhotoReview, workflow stage, user-entered receipt, and immutable isSynthetic. Changing report content returns workflow stage to DRAFT, preserving receipt history. Exporting does not imply submission. Workflow stages are DRAFT / EXPORTED / SUBMITTED / RESOLVED.
@@ -68,3 +74,7 @@ ReportDraft（schemaVersion 1）独立描述一个问题的一次现场材料，
 ReportRepository 以 AtomicTextFiles 写入 offline/reports/<reportId>.json，扫描时同时考虑原子备份和临时伴随文件。照片引用阻止单张删除；删除草稿保留照片。导出前后校验参考的是草稿和照片各自的修订及指纹，不提供拍摄真实性证明。
 
 对外 FIELDLOG_MULTI_PHOTO_MATERIALS v1 仅包含 report.txt、summary.json 和 photo-01.jpg 等已审阅副本；JSON 白名单记录共用报修信息、照片角色及副本指纹，不带原始位置、设备字段、回执或维修历史。此格式供项目归档及手动填写外部渠道，未经当地验证不称为政务导入协议。详见 [多图材料流程](multi-photo-materials.md)。
+
+ReportRepository.prepareShare uses the same full readiness, original/review fingerprint and JPEG metadata checks. ReviewedShareCache copies approved files into a UUID directory with only photo-01.jpg etc.; it rechecks the copied bytes and dimensions. Android's non-exported ReviewedPhotoProvider exposes only cache/reviewed-shares and grants read access only to selected content URIs. SharedMaterial is ephemeral, not a persisted submission receipt. The shared text matches report.txt; no source JSON, private metadata, receipts or original GPS enter the share directory. The clipboard path uses current validated report text and also does not change submission state.
+
+Shares are independent snapshots. Later edits or source cleanup do not change already handed-off bytes. Snapshots aged at least 24 hours are removed on later cache maintenance; newer ones survive chooser return, subject to Android's own cache eviction. Phone project deletion also removes its share cache. MaterialDocumentCopy validates before opening a destination, attempts deletion only after a write actually starts, and preserves the original copy error if partial-document cleanup also fails.

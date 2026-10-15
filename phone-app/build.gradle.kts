@@ -10,8 +10,8 @@ android {
         applicationId = "org.rokidfieldlog.phone"
         minSdk = 28
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.4.1-materials-preview"
+        versionCode = 6
+        versionName = "0.5.0-handoff-preview"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

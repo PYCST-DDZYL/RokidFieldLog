@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0 Phone intake and handoff preview — Unreleased
+
+- Add direct user-selected phone JPEG intake through the system photo picker on Android 13+ with a document-picker fallback. Copy only selected streams into private storage, bound bytes/pixels/count, validate a full batch before commit, and preserve existing edits on exact-byte re-selection. Unknown exposure time and position stay null; imported photos require their own privacy review.
+- Add native multi-photo sharing and separately copied report text. Reuse full report/photo validation, create independent reviewed JPEG snapshots, and grant temporary read access only through a concrete FileProvider scoped to the reviewed-shares cache. No source JSON or original photos are shared. Sharing never records submission, receipt or repair success.
+- Retain recent share snapshots for delayed receiving-app reads; remove expired snapshots on later maintenance, clean abandoned preparations, and include share cache in confirmed project deletion. Android can evict cache earlier; already handed-off files cannot be recalled through local edits.
+- Page the phone library at 20 records, add an unreviewed-photo filter, and preserve search/filter/page state. Keep controls disabled until all queued home-screen operations complete.
+- Preserve same-revision single-record edits when returning from the background, save valid edits on normal Back/return, allow explicit discard for invalid coordinates, and clear address confirmation after address changes. These Android interaction paths still need device acceptance.
+- Fix multi-photo export deleting an unstarted destination after validation failure. Share a tested document-copy operation across single/multi-photo exports: validate first, clean only after a write starts, and preserve the original error if cleanup is denied.
+- Rewrite the README around a Chinese real-photo quick start; add bug and real-work feedback forms plus a PR template. Document the product execution checklist and actual acceptance limits. CI also uploads JUnit XML; Windows APK checks inspect required share classes, the packaged provider and its cache-only XML roots.
+- Phone version is 0.5.0-handoff-preview (versionCode 6).
+
+Validation: 176 JVM tests passed, including 28 new intake/share/copy regressions. Both debug APKs built; Android Lint has 0 errors and 40 remaining warnings (11 glasses, 29 phone: localization/style suggestions and API-33 attributes ignored on older Android). Source/pixel/file-boundary tests do not establish Android picker, sharing-app, Back/rotation, GPS or field acceptance. The executed APK checks include the compiled provider and cache-only resource path; latest remote results are in [GitHub Actions](https://github.com/PYCST-DDZYL/RokidFieldLog/actions).
+
 ## 0.4.1 Reliability fixes — Unreleased
 
 - Revalidate single-photo draft revisions, import-time original fingerprints, approved JPEGs and prepared ZIPs immediately before writing to the selected document. Changed text or privacy approval now requires regenerating materials. Clean abandoned temporary ZIPs and attempt to remove partially written external documents after copy failures.

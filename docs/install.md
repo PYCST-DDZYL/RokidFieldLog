@@ -2,6 +2,14 @@
 
 This preview provides glasses photography, a phone offline issue editor/redaction/material exporter, and independent location diagnostics. Wireless photo sync and maps are pending. See the [offline companion guide](offline-companion.md) to practice with synthetic records without connecting glasses. See [current status](../README.md#current-status) before installing.
 
+For the current phone preview, download **debug-apks** from a successful [Android CI run](https://github.com/PYCST-DDZYL/RokidFieldLog/actions/workflows/android.yml), extract it, and install phone-app-debug.apk on your own Android 9+ phone through the system installer. The phone workflow can select your own JPEGs, redact them, and share reviewed report photos/text without a glasses connection. Development ADB steps below are optional for ordinary APK installation. Real picker/share-target compatibility remains a separate device check.
+
+<a id="preview-signing"></a>
+
+## Preview signing and updates
+
+CI produces debug builds and does not currently provision a persistent release signing key. Android requires a compatible signing identity to install an update; debug keys can differ between build computers or fresh CI runners. See [Android app signing](https://developer.android.com/studio/publish/app-signing). If an update is refused, keep the existing app and records rather than uninstalling to force it. Continue builds with the same retained signing key when keeping ongoing data. A durable signed release and a full library/history backup-and-restore workflow still need implementation; the capture package is not a complete editable-library backup.
+
 ## Windows development setup
 
 1. Clone or extract the source into one `RokidFieldLog` directory. Keep all project tools and test files there. Use Windows PowerShell with `curl.exe` and `tar.exe` available.
@@ -71,7 +79,7 @@ This script only reads this package and hides coordinates in the terminal. Readi
 
 ## Delete and uninstall
 
-The glasses app offers latest-photo review and confirmed undo. Its delete-all action is under Review → Data management; the phone location-check screen has a separate delete-all button. Offline records also have a per-record delete action and a synthetic-only cleanup action. Confirming Delete removes only that app's internal `files/fieldlog` subtree, including its own records, photos, recovery backups, and fixture data. Cancel and Back must preserve the data. Actual positive deletion has not been tested against production photos. App-private runtime caches, if present, are removed by Android's app storage clear or uninstall.
+The glasses app offers latest-photo review and confirmed undo. Its delete-all action is under Review → Data management; the phone location-check screen has a separate delete-all button. Offline records also have a per-record delete action and a synthetic-only cleanup action. Confirming Delete removes only that app's internal `files/fieldlog` subtree, including its own records, photos, recovery backups, and fixture data; phone delete-all also clears its `cache/reviewed-shares` snapshots. Cancel must preserve the data. Ordinary Back from the issue editor saves valid edits. Actual positive deletion has not been tested against production photos. Android's app storage clear or uninstall also removes private caches.
 
 Normal Android uninstall removes the app's private files, databases, and caches. Uninstall each FieldLog app through its device's normal app management UI or an explicitly authorized package uninstall. Do not use ADB shell commands to delete gallery or shared-storage directories. Reinstalling over an existing build retains private data; uninstalling normally removes it. ADB's keep-data uninstall option would retain data and is not used by this project.
 

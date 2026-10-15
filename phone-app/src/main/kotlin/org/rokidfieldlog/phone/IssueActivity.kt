@@ -8,6 +8,8 @@ import android.os.Bundle
 import android.provider.DocumentsContract
 import android.text.InputFilter
 import android.text.InputType
+import android.text.Editable
+import android.text.TextWatcher
 import android.widget.*
 import org.rokidfieldlog.core.*
 import java.io.File
@@ -46,10 +48,14 @@ class IssueActivity : Activity() {
         status = OfflineUi.text(this, "正在读取记录…")
         content.addView(status)
         OfflineUi.install(this, content)
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { leave() }
+        }
     }
     override fun onResume() { super.onResume(); if (!busy && ::store.isInitialized && !isFinishing) reload() }
-    private fun reload() = task("正在读取记录…", { store.library.load(id) }) { loaded ->
-        entry = loaded; render(loaded)
+    private fun reload() {
+        if (entry != null && ::category.isInitialized) savedForm = Bundle().also(::captureFormState)
+        task("正在读取记录…", { store.library.load(id) }) { loaded -> entry = loaded; render(loaded) }
     }
     private fun render(loaded: LibraryEntry) {
         content.removeAllViews()
@@ -129,7 +135,7 @@ class IssueActivity : Activity() {
                     task("正在删除…", { store.library.delete(id) }) { finish() }
                 }.show()
         })
-        content.addView(OfflineUi.button(this, "返回列表") { finish() })
+        content.addView(OfflineUi.button(this, "保存并返回列表") { leave() })
         savedForm?.takeIf { it.getLong("formRevision", -1) == draft.revision }?.let { state ->
             category.setSelection(state.getInt("category")); address.setText(state.getString("address"))
             confirmed.isChecked = state.getBoolean("confirmed"); description.setText(state.getString("description"))
@@ -137,6 +143,11 @@ class IssueActivity : Activity() {
             latitude.setText(state.getString("latitude")); longitude.setText(state.getString("longitude")); crs.setSelection(state.getInt("crs"))
         }
         savedForm = null
+        address.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { confirmed.isChecked = false }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
     }
     private fun coordinateField(hint: String, value: String) = OfflineUi.field(this, hint, value).apply {
         inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
@@ -157,6 +168,20 @@ class IssueActivity : Activity() {
         val snapshot = runCatching { snapshot() }.getOrElse { status.text = OfflineUi.error(it); return }
         task("正在保存编辑…", { store.library.save(snapshot, snapshot.revision) }) { updated -> entry = updated; done() }
     }
+    private fun leave() {
+        if (busy) return
+        val current = entry ?: run { finish(); return }
+        val edited = runCatching { snapshot() }.getOrElse { error ->
+            AlertDialog.Builder(this).setTitle("编辑尚未保存").setMessage(OfflineUi.error(error))
+                .setPositiveButton("继续编辑", null)
+                .setNegativeButton("放弃编辑并返回") { _, _ -> finish() }.show()
+            return
+        }
+        if (edited == current.draft) finish() else saveForm { finish() }
+    }
+    @android.annotation.SuppressLint("GestureBackNavigation")
+    @Deprecated("Back callback for Android 9–12")
+    override fun onBackPressed() { if (android.os.Build.VERSION.SDK_INT < 33) leave() else super.onBackPressed() }
     private fun receiptDialog() {
         saveForm {
             val box = OfflineUi.column(this)
@@ -207,24 +232,18 @@ class IssueActivity : Activity() {
             status.text = "已取消材料保存"; return
         }
         task("正在写入你选择的位置…", {
-            var writeStarted = false
-            var copied = false
             try {
-                store.library.validatePrepared(prepared)
-                checkNotNull(contentResolver.openOutputStream(uri, "w")).use { output ->
-                    writeStarted = true
-                    prepared.file.inputStream().use { it.copyTo(output) }
-                }
-                copied = true
+                MaterialDocumentCopy.copy(
+                    validate = { store.library.validatePrepared(prepared) },
+                    openInput = { prepared.file.inputStream() },
+                    openOutput = { checkNotNull(contentResolver.openOutputStream(uri, "w")) },
+                    deletePartial = { DocumentsContract.deleteDocument(contentResolver, uri) })
                 store.library.markExported(id, prepared.revision)
                 store.library.load(id)
-            } catch (error: Exception) {
-                if (writeStarted && !copied) runCatching { DocumentsContract.deleteDocument(contentResolver, uri) }
-                throw error
             } finally { store.library.discardMaterial(prepared) }
         }) { updated -> entry = updated; render(updated); status.text = "材料已保存，请到官方渠道人工提交。" }
     }
-    override fun onSaveInstanceState(out: Bundle) {
+    private fun captureFormState(out: Bundle) {
         entry?.let {
             if (::category.isInitialized) {
                 out.putLong("formRevision", it.draft.revision); out.putInt("category", category.selectedItemPosition)
@@ -233,6 +252,9 @@ class IssueActivity : Activity() {
                 out.putString("latitude", latitude.text.toString()); out.putString("longitude", longitude.text.toString()); out.putInt("crs", crs.selectedItemPosition)
             }
         }
+    }
+    override fun onSaveInstanceState(out: Bundle) {
+        captureFormState(out)
         pending?.let { out.putString("exportName", it.file.name); out.putLong("exportRevision", it.revision); out.putString("exportHash", it.sha256) }
         super.onSaveInstanceState(out)
     }

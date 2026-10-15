@@ -12,6 +12,8 @@ class PrivateProbeStore(context: Context) {
     }
     private val filesRoot = context.filesDir.canonicalFile
     private val root = File(filesRoot, "fieldlog")
+    private val cacheRoot = context.cacheDir.canonicalFile
+    private val shares = File(cacheRoot, "reviewed-shares")
     private val lastProbe = File(root, "last-probe.json")
 
     fun save(data: JSONObject) {
@@ -37,6 +39,8 @@ class PrivateProbeStore(context: Context) {
 
     fun deleteAllProjectData() {
         check(root.canonicalFile.parentFile == filesRoot) { "Unsafe data path" }
+        check(shares.canonicalFile.parentFile == cacheRoot) { "Unsafe share cache path" }
+        check(!shares.exists() || shares.deleteRecursively()) { "Share cache deletion failed" }
         check(!root.exists() || root.deleteRecursively()) { "Private data deletion failed" }
     }
 }

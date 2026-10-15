@@ -1,0 +1,31 @@
+name: 实际使用反馈
+description: 记录报修材料交接时遇到的障碍，帮助决定下一步优先级。
+title: "[Feedback] "
+body:
+  - type: markdown
+    attributes:
+      value: 请概括工作场景和接收方要求，不需要公开具体地点、联系人或现场照片。反馈不代表项目已完成政府渠道适配。
+  - type: textarea
+    id: workflow
+    attributes:
+      label: 你要完成什么工作
+      description: 巡查者和接收方分别是谁？原来通过什么方式报修？
+    validations:
+      required: true
+  - type: textarea
+    id: blocker
+    attributes:
+      label: 在哪一步卡住或需要返工
+      description: 例如缺照片、找不到地点、分类不符、分享只收到图片、重复填写。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 对方实际需要什么
+      description: 可写字段、图片张数和大小、接收格式，以及是否真的接受了本次材料。
+  - type: textarea
+    id: comparison
+    attributes:
+      label: 与原来方法比较
+      description: 哪一步省时、哪一步更慢？若有计时，请包括整理、传输、提交和返工的完整时间及样本数。

@@ -207,22 +207,39 @@ class ReportRepository(private val root: File, private val texts: AtomicTextFile
         require(prepared.file.canonicalFile.parentFile == exports.canonicalFile)
         prepared.file.delete()
     }
+    fun submissionText(id: String): String {
+        val report = load(id)
+        validate(report, selected(report))
+        return text(report)
+    }
+    fun prepareShare(id: String, cache: ReviewedShareCache): SharedMaterial {
+        val report = load(id)
+        val entries = selected(report)
+        validate(report, entries)
+        return cache.prepare(text(report), report.photos.map { photo ->
+            val entry = entries.getValue(photo.photoId)
+            val review = checkNotNull(entry.draft.photoReview)
+            ReviewedAttachment(entry.reviewFile(review.fileName), review.outputSha256)
+        })
+    }
+    private fun text(report: ReportDraft): String = buildString {
+        if (report.isSynthetic == true) append("合成演示数据，非现场记录，不得当作真实事项提交。\n\n")
+        append("接收人 / 渠道：" + report.recipient.trim() + "\n")
+        append("接收方问题分类：" + report.category.trim() + "\n")
+        append("问题地址：" + report.address.trim() + "\n")
+        append("附近参照物 / 设施编号：" + report.landmark.trim() + "\n")
+        append("现场日期（人工确认）：" + report.eventDate + "\n")
+        append("问题说明及处理请求：\n" + report.description.trim() + "\n\n")
+        report.photos.forEachIndexed { index, photo ->
+            append("photo-" + (index + 1).toString().padStart(2, '0') + ".jpg：" + ReportReadiness.roleLabel(photo.role) + "\n")
+        }
+        append("\n请将说明和已审阅 JPG 填入接收方现有渠道；此材料不表示已提交或受理。\n")
+    }
     private fun write(output: OutputStream, report: ReportDraft, entries: Map<String, LibraryEntry>) {
         val attachments = report.photos.mapIndexed { index, photo ->
             val review = checkNotNull(entries.getValue(photo.photoId).draft.photoReview)
             linkedMapOf<String, Any>("file" to ("photo-" + (index + 1).toString().padStart(2, '0') + ".jpg"),
                 "role" to photo.role.name, "sha256" to review.outputSha256)
-        }
-        val text = buildString {
-            if (report.isSynthetic == true) append("合成演示数据，非现场记录，不得当作真实事项提交。\n\n")
-            append("接收人 / 渠道：" + report.recipient.trim() + "\n")
-            append("接收方问题分类：" + report.category.trim() + "\n")
-            append("问题地址：" + report.address.trim() + "\n")
-            append("附近参照物 / 设施编号：" + report.landmark.trim() + "\n")
-            append("现场日期（人工确认）：" + report.eventDate + "\n")
-            append("问题说明及处理请求：\n" + report.description.trim() + "\n\n")
-            report.photos.forEachIndexed { index, photo -> append(attachments[index].getValue("file").toString() + "：" + ReportReadiness.roleLabel(photo.role) + "\n") }
-            append("\n请解压后将说明和 JPG 填入接收方现有渠道；本 ZIP 不代表官方导入格式，也未执行提交。\n")
         }
         // Public material fields are explicitly whitelisted. No original GPS, private source, receipt, or repair history.
         val summary = linkedMapOf<String, Any?>("format" to "FIELDLOG_MULTI_PHOTO_MATERIALS", "version" to 1,
@@ -232,7 +249,7 @@ class ReportRepository(private val root: File, private val texts: AtomicTextFile
             "photos" to attachments, "submissionMethod" to "USER_SUBMITS_MANUALLY")
         ZipOutputStream(output.buffered()).use { zip ->
             fun entry(name: String, content: ByteArray) { zip.putNextEntry(ZipEntry(name)); zip.write(content); zip.closeEntry() }
-            entry("report.txt", text.toByteArray(Charsets.UTF_8))
+            entry("report.txt", text(report).toByteArray(Charsets.UTF_8))
             entry("summary.json", GsonBuilder().serializeNulls().setPrettyPrinting().create().toJson(summary).toByteArray(Charsets.UTF_8))
             report.photos.forEachIndexed { index, photo ->
                 val source = entries.getValue(photo.photoId)

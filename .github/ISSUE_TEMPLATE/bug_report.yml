@@ -1,0 +1,51 @@
+name: 问题反馈
+description: 报告无法完成的操作、数据异常或构建失败。
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: 请尽量用内置演示复现。公开反馈不要附真实街景、人脸、车牌、坐标、设备序列号或令牌。
+  - type: input
+    id: version
+    attributes:
+      label: 软件版本或 Git 提交
+      placeholder: 例如 0.5.0-handoff-preview，或 GitHub Actions 的提交号
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: 出问题的位置
+      options:
+        - 手机选照片或采集包导入
+        - 记录编辑或隐私审阅
+        - 报修材料、分享或保存
+        - 问题历史与复查
+        - 眼镜拍照或定位
+        - 构建、安装或文档
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 怎样复现
+      description: 从哪个页面开始，依次做了什么？使用演示、JPEG 还是采集包？
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: 期望结果和实际结果
+      description: 写出提示文字，以及是否取消、切后台、旋转或重新打开过应用。
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 运行环境
+      placeholder: 设备型号和 Android 版本，或操作系统与 JDK 版本；不要填写序列号
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 可选的合成截图或最小错误片段
+      description: 先检查并移除个人信息和密钥，无需上传整个日志或私有采集包。

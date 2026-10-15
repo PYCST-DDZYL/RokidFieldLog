@@ -35,6 +35,7 @@ class PhoneIssueStore(context: Context) {
         override fun elapsedNanos() = android.os.SystemClock.elapsedRealtimeNanos()
     }
     val library = OfflineLibrary(root, texts, inspector, clock, beforeDelete = { inspections.requireUnlinked(it); reports.requireUnlinked(it) })
+    val shares = ReviewedShareCache(File(context.cacheDir, "reviewed-shares"), inspector, clock)
     val reports: ReportRepository by lazy { ReportRepository(root, texts, library, inspector) }
     val inspections: InspectionRepository by lazy {
         InspectionRepository(File(root, "issues"), texts, clock, InspectionEvidenceSource { id ->
