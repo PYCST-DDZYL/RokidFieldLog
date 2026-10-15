@@ -1,204 +1,117 @@
 package org.rokidfieldlog.phone
 
-import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.pm.PackageManager
-import android.graphics.Color
+import android.content.Intent
 import android.os.Bundle
-import android.view.View
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import org.json.JSONObject
-import java.time.Instant
-import java.util.Locale
+import android.text.Editable
+import android.text.TextWatcher
+import android.widget.*
+import org.rokidfieldlog.core.*
 
 class MainActivity : Activity() {
-    private lateinit var probe: LocationProbe
-    private lateinit var store: PrivateProbeStore
-    private lateinit var resultView: TextView
-    private lateinit var autoButton: Button
-    private lateinit var systemButton: Button
-    private lateinit var cancelButton: Button
-    private var pendingSystemMode = false
-    private var screenVisible = false
-    private var requestSerial = 0
-    private var deleting = false
+    private lateinit var store: PhoneIssueStore
+    private lateinit var content: LinearLayout
+    private lateinit var records: LinearLayout
+    private lateinit var status: TextView
+    private lateinit var search: EditText
+    private var entries = emptyList<LibraryEntry>()
+    private var busy = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        probe = LocationProbe(this)
-        store = PrivateProbeStore(this)
-        buildView()
+        store = PhoneIssueStore(this)
+        content = OfflineUi.column(this)
+        content.addView(OfflineUi.text(this, "FieldLog", 28f))
+        content.addView(OfflineUi.text(this, "记录整理", 22f))
+        content.addView(OfflineUi.text(this, "核对现场记录，处理照片隐私，再准备人工提交材料。"))
+        status = OfflineUi.text(this, "正在读取记录…")
+        content.addView(status)
+        content.addView(OfflineUi.button(this, "导入采集包") {
+            if (!busy) runCatching {
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "application/zip"
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed"))
+                }, 201)
+            }.onFailure { status.text = "此设备没有可用的文件选择器" }
+        })
+        content.addView(OfflineUi.button(this, "载入演示记录") {
+            if (!busy) AlertDialog.Builder(this).setTitle("载入合成演示？")
+                .setMessage("生成两张合成图片供练习整理、遮挡和导出。演示记录及材料会始终带演示标记。")
+                .setNegativeButton("取消", null).setPositiveButton("载入") { _, _ ->
+                    task("正在准备演示…", { SyntheticSamples.add(store) }) { report -> refresh("已载入 " + report.added + " 条演示记录") }
+                }.show()
+        })
+        content.addView(OfflineUi.button(this, "定位检查") { if (!busy) startActivity(Intent(this, LocationActivity::class.java)) })
+        search = OfflineUi.field(this, "搜索地址、说明或类别")
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderEntries() }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
+        content.addView(search)
+        records = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(records)
+        content.addView(OfflineUi.button(this, "清除演示记录") {
+            if (!busy) AlertDialog.Builder(this).setTitle("删除合成演示记录？")
+                .setMessage("仅删除带演示标记的记录及其照片。")
+                .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ ->
+                    task("正在清除演示…", {
+                        val ids = store.library.list().filter { it.draft.isSynthetic }.map { it.draft.photoId }
+                        ids.forEach { store.library.delete(it) }; ids.size
+                    }) { refresh("演示记录已清除") }
+                }.show()
+        })
+        OfflineUi.install(this, content)
+    }
+
+    override fun onResume() { super.onResume(); refresh() }
+    private fun refresh(message: String? = null) {
+        if (busy) return
+        task(message ?: "正在读取记录…", { store.library.scan() }) { loaded ->
+            entries = loaded.entries
+            status.text = (message?.let { it + "\n" } ?: "") + "本机共 " + entries.size + " 条记录；眼镜无线同步尚未接入。"
+            if (loaded.unreadableCount > 0) status.append("\n有 " + loaded.unreadableCount + " 条记录无法读取，原文件已保留。")
+            renderEntries()
+        }
+    }
+    private fun renderEntries() {
+        if (!::records.isInitialized) return
+        records.removeAllViews()
+        val query = search.text.toString().trim()
+        val shown = entries.filter { query.isEmpty() || (it.draft.address + it.draft.description + MaterialExporter.categoryLabel(it.draft.category)).contains(query, ignoreCase = true) }
+        if (shown.isEmpty()) records.addView(OfflineUi.text(this, if (entries.isEmpty()) "暂无记录。可导入自己的采集包，或先载入演示。" else "没有匹配的记录。"))
+        for (entry in shown) {
+            val draft = entry.draft
+            val card = OfflineUi.card(this)
+            card.addView(OfflineUi.text(this, (if (draft.isSynthetic) "[合成演示] " else "") + MaterialExporter.categoryLabel(draft.category), 20f))
+            card.addView(OfflineUi.text(this, draft.address.ifBlank { "问题地址待确认" }))
+            card.addView(OfflineUi.text(this, OfflineUi.stage(draft.stage) + " · " + if (draft.photoReview == null) "照片未审阅" else "照片已审阅"))
+            card.addView(OfflineUi.button(this, "打开记录") {
+                if (!busy) startActivity(Intent(this, IssueActivity::class.java).putExtra("photoId", draft.photoId))
+            })
+            records.addView(card)
+        }
+    }
+    private fun <T> task(message: String, action: () -> T, done: (T) -> Unit) {
+        busy = true; status.text = message; OfflineUi.enable(content, false)
         PrivateProbeStore.fileExecutor.execute {
-            val previous = store.last()
+            val result = runCatching(action)
             runOnUiThread {
-                if (previous != null && requestSerial == 0 && !isDestroyed && !isFinishing) {
-                    try { showResult(previous, historical = true) }
-                    catch (_: Exception) { resultView.text = "历史记录无法读取；可重新测试定位。" }
-                }
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                busy = false; OfflineUi.enable(content, true)
+                result.fold(done) { status.text = OfflineUi.error(it) }
             }
         }
     }
-
-    private fun buildView() {
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val padding = (20 * resources.displayMetrics.density).toInt()
-            setPadding(padding, padding, padding, padding)
-        }
-        content.addView(label("FieldLog Companion", 26f))
-        content.addView(label("Phase 1 · 手机定位验证\n照片同步与地图将在后续阶段提供。", 16f))
-        val googleState = if (probe.googleServicesAvailable()) "可用" else "不可用，将使用 Android 系统定位"
-        content.addView(label("Google Play services：$googleState", 15f))
-        autoButton = button("测试定位（自动选择）") { requestProbe(false) }
-        systemButton = button("测试 Android 系统定位") { requestProbe(true) }
-        cancelButton = button("停止本次定位") { probe.cancel() }.apply { isEnabled = false }
-        content.addView(autoButton)
-        content.addView(systemButton)
-        content.addView(cancelButton)
-        resultView = label("尚未定位。请在户外测试，首次定位可能需要等待。", 16f)
-        resultView.setTextIsSelectable(true)
-        content.addView(resultView)
-        content.addView(button("删除全部项目数据") { confirmDelete() })
-        val scroll = ScrollView(this).apply { addView(content) }
-        ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
-        setContentView(scroll)
-    }
-
-    private fun label(value: String, size: Float) = TextView(this).apply {
-        text = value
-        textSize = size
-        setTextColor(Color.rgb(24, 39, 34))
-        setPadding(0, 10, 0, 12)
-    }
-
-    private fun button(title: String, action: () -> Unit) = Button(this).apply {
-        text = title
-        isAllCaps = false
-        setOnClickListener { action() }
-    }
-
-    private fun requestProbe(systemMode: Boolean) {
-        if (deleting) return
-        pendingSystemMode = systemMode
-        if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 101)
-        } else startProbe(systemMode)
-    }
-
-    private fun startProbe(systemMode: Boolean) {
-        if (deleting) return
-        val serial = ++requestSerial
-        setBusy(true)
-        resultView.text = getString(R.string.locating)
-        probe.start(systemMode, onProgress = { update ->
-            val accuracy = update.observation.accuracyMeters?.let { "约 " + it.toInt() + " 米" } ?: "精度未知"
-            resultView.text = "已收到拍摄者位置（$accuracy），继续等待更准确的结果…最多 60 秒。问题实际位置仍待确认。"
-        }) { result ->
-            setBusy(false)
-            showResult(result.data, historical = false)
-            PrivateProbeStore.fileExecutor.execute {
-                val saved = runCatching { store.save(result.data) }
-                if (saved.isFailure) runOnUiThread {
-                    if (!isDestroyed && screenVisible && requestSerial == serial && !deleting) resultView.append("\n本次结果未能保存到私有存储。")
-                }
+    @Deprecated("Uses the system document picker for Android 9 and newer")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 201 && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            task("正在校验并导入…", { checkNotNull(contentResolver.openInputStream(uri)).use { store.library.importPackage(it) } }) { report ->
+                refresh("导入 " + report.added + " 条，跳过 " + report.duplicates + " 条重复记录")
             }
         }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 101 && screenVisible && !isFinishing && !isDestroyed) startProbe(pendingSystemMode)
-    }
-
-    private fun setBusy(busy: Boolean) {
-        autoButton.isEnabled = !busy
-        systemButton.isEnabled = !busy
-        cancelButton.isEnabled = busy
-    }
-
-    private fun showResult(data: JSONObject, historical: Boolean) {
-        val prefix = if (historical) "上次测试的历史记录（不是当前位置）\n\n" else "本次测试结果\n\n"
-        val observation = data.optJSONObject("location")
-        val body = if (observation != null) {
-            buildString {
-                append("定位成功 · 拍摄者位置测试\n")
-                if (data.optString("quality") == "BEST_AVAILABLE_AT_DEADLINE") append("等待结束，采用最近的低精度结果；仍需人工核对。\n")
-                append("纬度：${observation.getDouble("latitude")}\n")
-                append("经度：${observation.getDouble("longitude")}\n")
-                val accuracy = if (observation.isNull("accuracyMeters")) "未知" else String.format(Locale.ROOT, "%.1f 米", observation.getDouble("accuracyMeters"))
-                append("精度估计：$accuracy\n")
-                append("权限：${if (data.optString("permissionLevel") == "PRECISE") "精确" else "近似"}\n")
-                append("位置时间：${Instant.ofEpochMilli(observation.getLong("locationTimeUtcMillis"))}\n")
-                append("收到时间：${Instant.ofEpochMilli(data.getLong("receivedAtUtcMillis"))}\n")
-                append("收到时数据年龄：${observation.getLong("ageAtReceiptMillis")} 毫秒\n")
-                append("来源：${data.optString("source")} / ${observation.optString("provider")}\n")
-                append("坐标系：WGS84\n")
-                append("问题实际位置：待人工确认\n")
-                append("眼镜连接：此阶段尚未配置\n")
-                append("精度是估计值；该结果可能融合 GPS、Wi-Fi 或移动网络。")
-            }
-        } else {
-            val reason = when (data.optString("reason")) {
-                "PERMISSION_DENIED" -> "定位权限未授予。可再次点击测试申请权限。"
-                "LOCATION_DISABLED" -> "手机定位未开启。App 不会自动修改定位设置。"
-                "NO_ENABLED_PROVIDER" -> "没有可用的定位提供者；仅近似权限时，部分手机无法使用卫星定位。"
-                "STALE_LOCATION" -> "位置数据过旧，未采用。"
-                "MISSING_LOCATION_TIME" -> "位置数据缺少有效时间，未采用。"
-                "MOCK_LOCATION_REJECTED" -> "检测到模拟位置，不能作为真实定位验证。"
-                "USER_OR_SCREEN_CLOSED" -> "本次定位已停止。"
-                "PROVIDER_ERROR" -> "系统定位提供者发生错误。"
-                "TIMEOUT" -> "定位超时。请在户外重新测试。"
-                else -> "位置时间或数据异常，未采用：${data.optString("reason")}."
-            }
-            "${if (data.optString("status") == "CANCELLED") "已停止" else "定位失败"}\n$reason\n经纬度：未获取（保持为空）"
-        }
-        resultView.text = getString(R.string.result_block, prefix, body)
-    }
-
-    private fun confirmDelete() {
-        AlertDialog.Builder(this)
-            .setTitle("删除全部 FieldLog 项目数据？")
-            .setMessage("仅删除此 App 私有存储中的测试记录。其他照片、文件和 App 不受影响。此操作不可撤销。")
-            .setNegativeButton("取消", null)
-            .setPositiveButton("删除") { _, _ ->
-                probe.cancel()
-                deleting = true
-                requestSerial++
-                setBusy(true)
-                cancelButton.isEnabled = false
-                resultView.text = "正在删除项目数据…"
-                PrivateProbeStore.fileExecutor.execute {
-                    val result = runCatching { store.deleteAllProjectData() }
-                    runOnUiThread {
-                        deleting = false
-                        if (!isDestroyed) {
-                            setBusy(false)
-                            resultView.text = if (result.isSuccess) "项目数据已删除。" else "删除未完成，请重试。"
-                        }
-                    }
-                }
-            }.show()
-    }
-
-    override fun onStart() {
-        super.onStart()
-        screenVisible = true
-    }
-
-    override fun onStop() {
-        screenVisible = false
-        probe.cancel()
-        super.onStop()
     }
 }

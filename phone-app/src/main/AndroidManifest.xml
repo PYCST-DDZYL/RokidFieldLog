@@ -11,6 +11,9 @@
         android:label="FieldLog Companion"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity android:name=".LocationActivity" android:exported="false" />
+        <activity android:name=".IssueActivity" android:exported="false" />
+        <activity android:name=".PrivacyActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

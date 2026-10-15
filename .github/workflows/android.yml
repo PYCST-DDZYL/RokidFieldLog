@@ -24,7 +24,7 @@ jobs:
       - name: Install Android compile SDK
         run: sdkmanager "platforms;android-36" "build-tools;35.0.0"
       - name: Test, build and lint
-        run: ./gradlew --no-daemon :fieldlog-core:test assembleDebug lintDebug
+        run: ./gradlew --no-daemon :fieldlog-core:test assembleDebug lintDebug -PfieldlogDemo=true
       - name: Upload verification reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -34,3 +34,16 @@ jobs:
             fieldlog-core/build/reports/tests/
             glasses-app/build/reports/lint-results-debug.*
             phone-app/build/reports/lint-results-debug.*
+      - name: Upload synthetic offline preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-offline-preview
+          path: .local/offline-preview/
+          include-hidden-files: true
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apks
+          path: |
+            glasses-app/build/outputs/apk/debug/*.apk
+            phone-app/build/outputs/apk/debug/*.apk

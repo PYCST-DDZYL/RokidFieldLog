@@ -21,4 +21,11 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 
 // Test text stays UTF-8; Windows worker argument-file encoding is configured
 // separately in the project-private Gradle user properties by our script.
-tasks.test { systemProperty("file.encoding", "UTF-8") }
+tasks.test {
+    systemProperty("file.encoding", "UTF-8")
+    // Explicit opt-in: publish only synthetic fixtures into the ignored preview directory.
+    if (providers.gradleProperty("fieldlogDemo").orNull == "true") {
+        systemProperty("fieldlog.demoOutput", rootProject.file(".local/offline-preview").absolutePath)
+        outputs.upToDateWhen { false }
+    }
+}

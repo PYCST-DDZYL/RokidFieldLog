@@ -8,7 +8,7 @@ $requiredClasses = @("$expectedPackage.MainActivity")
 if ($Target -eq 'glasses') {
     $requiredClasses += @("$expectedPackage.GlassesApplication", "$expectedPackage.RecoveryInstrumentation", 'org.rokidfieldlog.core.CaptureFiles')
 } else {
-    $requiredClasses += @("$expectedPackage.LocationProbe", 'org.rokidfieldlog.core.LocationAttempt')
+    $requiredClasses += @("$expectedPackage.LocationProbe", "$expectedPackage.LocationActivity", "$expectedPackage.IssueActivity", "$expectedPackage.PrivacyActivity", "$expectedPackage.RedactionView", 'org.rokidfieldlog.core.LocationAttempt', 'org.rokidfieldlog.core.OfflineLibrary', 'org.rokidfieldlog.core.MaterialExporter')
 }
 Push-Location $projectRoot
 try {

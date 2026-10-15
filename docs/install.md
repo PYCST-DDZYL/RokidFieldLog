@@ -1,6 +1,6 @@
 # Installation, testing, and cleanup
 
-This is a Phase 1 preview: glasses photography and an independent phone location probe. There is no photo sync, map, or export UI yet. See [current status](../README.md#current-status) before installing.
+This preview provides glasses photography, a phone offline issue editor/redaction/material exporter, and independent location diagnostics. Wireless photo sync and maps are pending. See the [offline companion guide](offline-companion.md) to practice with synthetic records without connecting glasses. See [current status](../README.md#current-status) before installing.
 
 ## Windows development setup
 
@@ -59,7 +59,7 @@ After approving installation and confirming a physical phone with an authorized 
 .\scripts\Install-App.ps1 -Target phone -ConfirmInstallation -StartApp
 ```
 
-Permit foreground precise or approximate location. Outdoors, tap the automatic location test. It waits up to 8 seconds for Fused, then uses remaining time for system providers, with a 60-second total deadline. A valid low-precision observation is shown provisionally while waiting for a more accurate fix. At the deadline only a fix no older than 5 seconds can become a labeled best-available result. The Android-system button bypasses Fused. Leaving the screen or pressing Stop cancels the request. Failure saves a reason and null location, never fabricated coordinates.
+From the companion home screen choose “定位检查”. Permit foreground precise or approximate location. Outdoors, tap the automatic location test. It waits up to 8 seconds for Fused, then uses remaining time for system providers, with a 60-second total deadline. A valid low-precision observation is shown provisionally while waiting for a more accurate fix. At the deadline only a fix no older than 5 seconds can become a labeled best-available result. The Android-system button bypasses Fused. Leaving the screen or pressing Stop cancels the request. Failure saves a reason and null location, never fabricated coordinates.
 
 Historical results are labeled as history. The phone probe has not yet been hardware-tested, including no-Google-services behavior. The private latest-result check is:
 
@@ -71,10 +71,10 @@ This script only reads this package and hides coordinates in the terminal. Readi
 
 ## Delete and uninstall
 
-The glasses app offers latest-photo review and confirmed undo. Its delete-all action is under Review → Data management; the phone has a separate delete-all button. Confirming Delete removes only that app's internal `files/fieldlog` subtree, including its own records, photos, recovery backups, and fixture data. Cancel and Back must preserve the data. Actual positive deletion has not been tested against production photos. App-private runtime caches, if present, are removed by Android's app storage clear or uninstall.
+The glasses app offers latest-photo review and confirmed undo. Its delete-all action is under Review → Data management; the phone location-check screen has a separate delete-all button. Offline records also have a per-record delete action and a synthetic-only cleanup action. Confirming Delete removes only that app's internal `files/fieldlog` subtree, including its own records, photos, recovery backups, and fixture data. Cancel and Back must preserve the data. Actual positive deletion has not been tested against production photos. App-private runtime caches, if present, are removed by Android's app storage clear or uninstall.
 
 Normal Android uninstall removes the app's private files, databases, and caches. Uninstall each FieldLog app through its device's normal app management UI or an explicitly authorized package uninstall. Do not use ADB shell commands to delete gallery or shared-storage directories. Reinstalling over an existing build retains private data; uninstalling normally removes it. ADB's keep-data uninstall option would retain data and is not used by this project.
 
-Future reports exported through the Android system file picker will belong to the location chosen by the user and will remain after app cleanup or uninstall. Export is not implemented yet.
+Materials exported through the Android system file picker belong to the location chosen by the user and remain after app cleanup or uninstall. Generic material export is implemented; local official-channel acceptance and Android UI/device validation are pending.
 
 On the computer, source, tools, IDE configuration, downloads, and evidence are under the project root. Removing that directory after closing its tools cleans the project-local setup; review any private evidence you want to keep first. The approved ADB computer keys outside the project are shared with other Android debugging sessions. Do not remove them as a project cleanup step; doing so could revoke those sessions' computer identity.

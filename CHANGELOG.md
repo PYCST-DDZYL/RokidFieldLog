@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased — 2026-10-14
+## 0.2.0 Offline companion preview — Unreleased
+
+- Replace the phone launch screen with an offline record library: import validated capture packages, search records, edit confirmed category/address/date/description and optional coordinates with an explicit CRS. Preserve immutable source annotations separately from revisioned drafts.
+- Add bounded, staged ZIP imports with path/identity/version/photo checks, duplicate preservation and atomic batch commit. Corrupted existing entries remain on disk and do not hide readable records or permit import overwrite.
+- Add local upright photo viewing, zoom/pan, opaque mask drawing/undo, derived JPEG generation and explicit review of the actual output. No-mask reviews require an explicit no-third-party-information declaration. Limit decode memory, output long edge and bytes; omit original metadata.
+- Add generic manual-material ZIPs containing text, a whitelisted manifest and the reviewed JPEG. Bind the original to its import-time fingerprint before first review and recheck original/output fingerprints on export; reject private metadata, and require confirmed content and photo review. Save with the system document picker; no automatic government submission or official channel compatibility claim.
+- Track material save, explicit manual submission and resolution receipts. Content edits return to draft while retaining receipt history; a late export cannot mark newer edits exported.
+- Add clearly marked synthetic Android demos and host-only JPEG workflow tests. Opt-in -PfieldlogDemo=true produces ignored synthetic sample packages; CI uploads these, verification reports and debug APKs.
+- Keep independent location diagnostics under “定位检查”; extend APK verification to the new activities, redaction view and core workflows. Phone version is 0.2.0-offline-preview (versionCode 2).
+
+Validation: 84 JVM tests passed (19 new offline workflow tests), both debug APKs built and package/required classes verified, Android Lint 0 errors (29 remaining style/localization warnings across both apps). Synthetic material ZIP/text/JPEG generated and inspected. Linux CI configuration is updated; a remote run is still pending. Wireless glasses transfer, map integration, selected-city form acceptance, Android rendering/input acceptance and hardware energy measurements remain pending. No phone was connected for this work.
+
+## Capture reliability update — 2026-10-14
 
 - Allow capture during background recovery. Persist validated file statistics to skip unchanged JPEG decode/hash on startup; full validation remains available.
 - Move record/probe models, versioned JSON codec, recovery and location orchestration into fieldlog-core with injected clocks, image inspection, storage and provider/scheduler interfaces.
@@ -13,7 +25,7 @@
 
 Validation: 65 JVM tests passed; both debug APKs rebuilt and package/startup classes verified; Android Lint 0 errors (glasses 11 warnings, phone 2). Staged-source privacy and whitespace checks passed. Linux CI awaits its first remote run. ADB discovery was blocked by this execution environment's key-directory access restrictions; no new device success is claimed.
 
-Hardware verification of these changes, local submission-form acceptance, map/redaction/export implementation and field battery measurements remain pending.
+At this revision, hardware verification, local submission-form acceptance, map/redaction/export implementation and field battery measurements remained pending. The offline companion work above subsequently implements generic redaction/export.
 
 ## 0.1.0 Preview 2 — 2026-10-13
 

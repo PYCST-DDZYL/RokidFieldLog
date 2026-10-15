@@ -10,8 +10,8 @@ android {
         applicationId = "org.rokidfieldlog.phone"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-phase1"
+        versionCode = 2
+        versionName = "0.2.0-offline-preview"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -22,6 +22,7 @@ kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarg
 
 dependencies {
     implementation(project(":fieldlog-core"))
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("com.google.android.gms:play-services-location:21.4.0")
 }
