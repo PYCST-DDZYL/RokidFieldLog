@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 Inspection preview — Unreleased
+
+- Add stable issue IDs with append-only, revision-checked observations, repair feedback and separate human verification. Original record receipt stages do not imply physical repair verification.
+- Add manual photo association with confirmed site/date/visibility/finding. Reject reused IDs, identical bytes under a new ID, mixed synthetic/real evidence, out-of-order dates and altered originals. A later problem reopens the issue; an unclear new view returns to recheck.
+- Add paged issue history/search, pending-recheck filtering, and zoomable original/latest photo comparison. Repair confirmation requires clear new evidence after the latest feedback plus explicit human chronology confirmation; unknown and obstructed views cannot close an issue.
+- Bind comparisons and verdicts to import-time photo fingerprints. Protect linked records from single-photo deletion; confirmed tracking deletion retains originals. Preserve unreadable/future histories and stop mutations that could lose unknown links.
+- Add an actionable synthetic Android walkthrough and integrated host workflow fixtures. Optional test artifacts include a standalone interactive inspection-demo.html, a clearly synthetic capture ZIP and inspectable history JSON.
+- Add a one-site pilot protocol measuring full human effort, phone/glasses usability and willingness to pay; no measured tenfold improvement or field acceptance is claimed. Phone version is 0.3.0-inspection-preview (versionCode 3).
+
+Validation: 110 JVM tests passed (26 new inspection tests), both debug APKs built and package/required classes verified, Android Lint 0 errors (35 remaining style/localization warnings). The five-step synthetic HTML data and three JPEG fixtures were checked. Isolated browser screenshot rendering was unavailable because GPU subprocess startup was denied; no Android UI rendering or touch success is claimed. Wireless sync, visual matching/recognition, maps, physical Android UI tests and real pilot outcomes remain pending.
+
+
 ## 0.2.0 Offline companion preview — Unreleased
 
 - Replace the phone launch screen with an offline record library: import validated capture packages, search records, edit confirmed category/address/date/description and optional coordinates with an explicit CRS. Preserve immutable source annotations separately from revisioned drafts.

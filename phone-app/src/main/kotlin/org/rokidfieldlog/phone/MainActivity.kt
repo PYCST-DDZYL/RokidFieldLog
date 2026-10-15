@@ -23,10 +23,11 @@ class MainActivity : Activity() {
         store = PhoneIssueStore(this)
         content = OfflineUi.column(this)
         content.addView(OfflineUi.text(this, "FieldLog", 28f))
-        content.addView(OfflineUi.text(this, "记录整理", 22f))
-        content.addView(OfflineUi.text(this, "核对现场记录，处理照片隐私，再准备人工提交材料。"))
+        content.addView(OfflineUi.text(this, "观察与复查", 22f))
+        content.addView(OfflineUi.text(this, "接续同一问题的现场观察，核对维修结果，整理人工提交材料。"))
         status = OfflineUi.text(this, "正在读取记录…")
         content.addView(status)
+        content.addView(OfflineUi.button(this, "问题历史与待复查清单") { if (!busy) startActivity(Intent(this, InspectionActivity::class.java)) })
         content.addView(OfflineUi.button(this, "导入采集包") {
             if (!busy) runCatching {
                 startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -34,6 +35,15 @@ class MainActivity : Activity() {
                     putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed"))
                 }, 201)
             }.onFailure { status.text = "此设备没有可用的文件选择器" }
+        })
+        content.addView(OfflineUi.button(this, "载入复查流程演示") {
+            if (!busy) AlertDialog.Builder(this).setTitle("载入合成复查演示？")
+                .setMessage("生成破损、遮挡、处理后共三张合成图片。问题先停在待复查；第三张供你练习关联和人工确认。")
+                .setNegativeButton("取消", null).setPositiveButton("载入") { _, _ ->
+                    task("正在准备合成复查…", { InspectionSamples.add(store) }) { issue ->
+                        startActivity(Intent(this, InspectionActivity::class.java).putExtra("issueId", issue.issueId))
+                    }
+                }.show()
         })
         content.addView(OfflineUi.button(this, "载入演示记录") {
             if (!busy) AlertDialog.Builder(this).setTitle("载入合成演示？")
@@ -54,11 +64,10 @@ class MainActivity : Activity() {
         content.addView(records)
         content.addView(OfflineUi.button(this, "清除演示记录") {
             if (!busy) AlertDialog.Builder(this).setTitle("删除合成演示记录？")
-                .setMessage("仅删除带演示标记的记录及其照片。")
+                .setMessage("删除带演示标记的问题历史、记录及其照片。")
                 .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ ->
                     task("正在清除演示…", {
-                        val ids = store.library.list().filter { it.draft.isSynthetic }.map { it.draft.photoId }
-                        ids.forEach { store.library.delete(it) }; ids.size
+                        store.clearSyntheticRecords()
                     }) { refresh("演示记录已清除") }
                 }.show()
         })

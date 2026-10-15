@@ -11,6 +11,9 @@
         android:label="FieldLog Companion"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity android:name=".InspectionActivity" android:exported="false" />
+        <activity android:name=".InspectionLinkActivity" android:exported="false" />
+        <activity android:name=".InspectionCompareActivity" android:exported="false" />
         <activity android:name=".LocationActivity" android:exported="false" />
         <activity android:name=".IssueActivity" android:exported="false" />
         <activity android:name=".PrivacyActivity" android:exported="false" />

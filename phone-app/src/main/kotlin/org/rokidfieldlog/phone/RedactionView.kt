@@ -85,12 +85,16 @@ class RedactionView(context: Context) : View(context) {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isEnabled || bitmap == null) return false
         scaling.onTouchEvent(event)
-        if (event.pointerCount > 1 || scaling.isInProgress) { start = null; pending = null; return true }
+        if (event.pointerCount > 1 || scaling.isInProgress) {
+            parent?.requestDisallowInterceptTouchEvent(true)
+            start = null; pending = null; return true
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 lastX = event.x; lastY = event.y
                 start = if (drawMode && imageRect().contains(event.x, event.y)) point(event.x, event.y) else null
-                parent?.requestDisallowInterceptTouchEvent(true)
+                // At fit zoom, a read-only photo lets its surrounding page scroll.
+                parent?.requestDisallowInterceptTouchEvent(drawMode || zoom > 1f)
             }
             MotionEvent.ACTION_MOVE -> {
                 if (drawMode) {

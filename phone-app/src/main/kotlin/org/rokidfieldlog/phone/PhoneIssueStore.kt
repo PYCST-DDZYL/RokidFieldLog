@@ -17,9 +17,9 @@ import java.util.UUID
 class PhoneIssueStore(context: Context) {
     val root = File(context.filesDir, "fieldlog/offline").canonicalFile
     val inspector = ImageInspector(::dimensions)
-    val library = OfflineLibrary(root, object : AtomicTextFiles {
+    private val texts = object : AtomicTextFiles {
         override fun read(file: File): String = AtomicFile(file).openRead().use {
-            check(it.channel.size() <= 256 * 1024) { "记录文件过大" }
+            check(it.channel.size() <= InspectionCodec.MAX_BYTES) { "记录文件过大" }
             it.bufferedReader(Charsets.UTF_8).readText()
         }
         override fun write(file: File, text: String) {
@@ -29,10 +29,26 @@ class PhoneIssueStore(context: Context) {
             try { output.write(text.toByteArray(Charsets.UTF_8)); atomic.finishWrite(output) }
             catch (error: Exception) { atomic.failWrite(output); throw error }
         }
-    }, inspector, object : FieldClock {
+    }
+    private val clock = object : FieldClock {
         override fun utcMillis() = System.currentTimeMillis()
         override fun elapsedNanos() = android.os.SystemClock.elapsedRealtimeNanos()
-    })
+    }
+    val library = OfflineLibrary(root, texts, inspector, clock, beforeDelete = { inspections.requireUnlinked(it) })
+    val inspections: InspectionRepository by lazy {
+        InspectionRepository(File(root, "issues"), texts, clock, InspectionEvidenceSource { id ->
+            val entry = library.load(id)
+            InspectionEvidence(entry.original, entry.importedSha256, entry.draft.isSynthetic)
+        })
+    }
+    fun clearSyntheticRecords(): Int {
+        val listing = inspections.scan()
+        check(listing.unreadableCount == 0) { "有问题历史无法读取，请保留数据并核查后再清除演示" }
+        listing.issues.filter { it.isSynthetic }.forEach { inspections.deleteTracking(it.issueId, it.revision) }
+        val ids = library.list().filter { it.draft.isSynthetic }.map { it.draft.photoId }
+        ids.forEach { library.delete(it) }
+        return ids.size
+    }
 
     fun dimensions(file: File): Pair<Int, Int>? = runCatching {
         if (!CaptureFiles.hasJpegMarkers(file)) return@runCatching null

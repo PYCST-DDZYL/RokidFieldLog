@@ -1,8 +1,8 @@
 # Rokid FieldLog
 
-Record neighborhood maintenance problems with Rokid Glasses and an Android phone. 眼镜采集公共设施问题照片，手机辅助确认位置并准备政务材料。
+Observe the same maintenance problem over time, connect repair feedback, and review the evidence on return visits. 眼镜与手机记录步行设施问题，接续多次观察并人工复查处理结果。
 
-The glasses preview takes and stores photos with manual issue tags and latest-photo review/undo. The phone companion now imports private capture packages, lets you review and edit records, makes manually redacted JPEGs, and exports materials for manual submission. It also retains the independent location probe. Glasses-to-phone wireless synchronization and map correction are still pending.
+The glasses preview takes and stores photos with manual issue tags and latest-photo review/undo. The phone companion now imports private capture packages, lets you review and edit records, makes manually redacted JPEGs, and exports materials for manual submission. It also retains the independent location probe. The new inspection preview links multiple observations to a stable issue ID, separates repair feedback from human verification, and provides a recheck list and before/latest photo comparison. Association and verdicts remain manual. Glasses-to-phone wireless synchronization and map correction are still pending.
 
 ## Current status
 
@@ -14,17 +14,22 @@ This is the single current status table. Changes are recorded in [CHANGELOG](CHA
 | Background recovery and capture without waiting | Implemented; cache, concurrency, repair and deletion JVM regressions passed |
 | Manual tags, category on save, review/undo, idle-camera release | Implemented; this revision needs physical touchpad and display acceptance |
 | Phone Fused/system location, 60-second deadline and provisional feedback | Implemented; real phone/GPS and non-GMS acceptance pending |
-| Core JVM tests, both debug APKs, Android Lint | 84 tests passed; both APKs built and package/classes verified; Lint 0 errors; Android UI/device acceptance pending |
+| Core JVM tests, both debug APKs, Android Lint | 110 tests passed; both APKs built and package/classes verified; Lint 0 errors; physical Android UI acceptance pending |
 | Linux GitHub Actions | Workflow added for pushes and pull requests; first remote run pending |
 | Submission channel | Official candidate research documented; target region/form acceptance pending |
 | Glasses-to-phone transfer and clock matching | Phase 2; actual Rokid SDK/device compatibility pending |
 | Phone record import/list/search/edit and optional manual issue coordinates | Implemented offline; Android UI/device acceptance pending |
+| Stable issue history, manual observation links, repair feedback and recheck queue | Implemented; metadata/event rules, import integration and evidence safeguards passed JVM tests |
+| Before/latest photo comparison and manual verdict | Implemented; obstruction/unknown views remain pending; Android UI acceptance pending |
 | Map-based issue-point correction and coordinate conversion | Pending map-provider integration |
 | Manual privacy redaction, actual JPEG review and generic material export | Implemented; synthetic JVM workflow covers file/pixel checks; Android rendering acceptance pending |
 | Channel-specific classification/export | Pending a selected local form; current profile is generic manual materials |
 | Battery/heat, JPEG-size comparison and field throughput | Device measurement protocol ready; measurements pending |
 
 ## Try the preview
+
+The companion home screen now includes “问题历史与待复查清单” and “载入复查流程演示”. The synthetic workflow stops at an obstructed revisit, with another photo ready to attach and compare. Repair feedback never automatically closes an issue. Follow the [inspection guide](docs/inspection-workflow.md); the [single-site pilot protocol](docs/inspection-pilot.md) defines how to test real value and compare phone/glasses inputs. No field efficiency or customer payment outcome is claimed.
+
 
 The glasses app uses CameraX without a live camera preview. It stores photos in app-private storage, uses JPEG quality 93, and checks a 64 MiB space reserve before capture. Explicit capture input takes a photo; empty-background taps show the controls. The three main actions are capture, category and review/undo. Delete-all is inside data management with confirmation. Save feedback includes the captured category, which remains selected until changed.
 
@@ -64,6 +69,8 @@ The Windows script also checks both APK packages/startup classes. APKs are under
 [Roadmap](docs/roadmap.md) defines phase acceptance. Before Phase 2, select a local channel and verify the complete form using the [one-page channel research](docs/submission-channels.md). The current offline preview generates generic user-reviewed materials for manual submission; a researched channel profile is a later adapter. The [coordinate/privacy design](docs/coordinates-and-privacy.md) defines WGS84→map conversion, map-provider information, independent corrected issue coordinates, and redacted export copies. The [record contract](docs/record-format.md) defines typed fields, additive version compatibility and cache limits. The [field validation protocol](docs/field-validation.md) covers GPS, gestures, JPEG size, battery and heat.
 
 Bluetooth pairing alone does not provide phone GPS; Phase 2 needs a verified companion protocol. Automatic issue recognition requires the [separate model acceptance process](docs/recognition-readiness.md). Accounts, cloud photo storage and automatic municipal submissions remain outside V1.
+
+Opt-in -PfieldlogDemo=true also writes a standalone synthetic inspection-demo.html into ignored .local/offline-preview. It visualizes core workflow transitions with synthetic images and is not an Android screenshot.
 
 Contributors should read [CONTRIBUTING](CONTRIBUTING.md), run the checks, and review staged files for private data before pushing. Do not commit photos, raw coordinates, device identifiers, logs or keys.
 

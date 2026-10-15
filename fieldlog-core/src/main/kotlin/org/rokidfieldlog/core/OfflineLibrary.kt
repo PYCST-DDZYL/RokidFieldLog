@@ -22,7 +22,8 @@ data class PreparedMaterial(val photoId: String, val revision: Long, val file: F
 
 /** All callers use one background queue. Imports commit as one folder rename. */
 class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
-    private val inspector: ImageInspector, private val clock: FieldClock) {
+    private val inspector: ImageInspector, private val clock: FieldClock,
+    private val beforeDelete: (String) -> Unit = {}) {
     private val collections = File(root, "collections")
     private fun itemDirectories(): List<File> = collections.listFiles()?.filter { it.isDirectory && CaptureFiles.validId(it.name) }
         ?.flatMap { File(it, "items").listFiles()?.toList() ?: emptyList() }
@@ -149,6 +150,7 @@ class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
     }
 
     fun delete(id: String) {
+        beforeDelete(id)
         val entry = load(id)
         val target = entry.directory.canonicalFile
         require(target.toPath().startsWith(collections.canonicalFile.toPath()) && target.name == id)

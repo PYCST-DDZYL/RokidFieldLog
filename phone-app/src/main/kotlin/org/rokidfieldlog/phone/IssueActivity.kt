@@ -94,6 +94,9 @@ class IssueActivity : Activity() {
                 "（" + observation.coordinateSystem + "）。问题实际位置需要独立确认。"))
         }
         content.addView(OfflineUi.text(this, "照片：" + if (draft.photoReview == null) "尚未完成隐私审阅" else "已审阅导出副本"))
+        content.addView(OfflineUi.button(this, "关联问题 / 添加本次观察") {
+            saveForm { startActivity(Intent(this, InspectionLinkActivity::class.java).putExtra("photoId", id)) }
+        })
         content.addView(OfflineUi.button(this, "保存编辑") { saveForm { status.text = "编辑已保存" } })
         content.addView(OfflineUi.button(this, "查看照片 / 隐私遮挡") {
             saveForm { startActivity(Intent(this, PrivacyActivity::class.java).putExtra("photoId", id)) }
