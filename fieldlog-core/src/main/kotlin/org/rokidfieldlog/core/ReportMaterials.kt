@@ -27,13 +27,39 @@ data class ReportDraft(
     val sameIssueVisitConfirmed: Boolean = false,
     val photos: List<ReportPhoto> = emptyList(),
     val isSynthetic: Boolean? = null,
+    val channelId: String = "GENERIC_MANUAL",
+    val province: String = "",
+    val city: String = "",
+    val district: String = "",
+    val purpose: String = "",
+    val contactName: String = "",
+    val contactPhone: String = "",
+    val mediaInterview: Boolean? = null,
+    val noticeAccepted: Boolean = false,
+    val albumAcceptanceConfirmed: Boolean = false,
+    val photographerReference: PhotographerReference? = null,
+    val addressSuggestion: String = "",
+    val handoff: ReportHandoff = ReportHandoff(),
+)
+
+/** Private notes about a real manual attempt; never included in outgoing materials. */
+data class ReportHandoff(
+    val receipt: String = "",
+    val attemptedOn: String = "",
+    val extraRequirements: String = "",
+    val rejectedPhotos: String = "",
+    val elapsedMinutes: String = "",
+    val albumResult: String = "UNKNOWN",
+    val inspectionIssueId: String? = null,
 )
 
 object ReportCodec {
     const val MAX_BYTES = 65_536
     const val MAX_PHOTOS = 5 // Product limit, not a claimed limit of any government channel.
     private val fields = setOf("schemaVersion", "reportId", "revision", "recipient", "category", "address", "landmark",
-        "eventDate", "description", "locationConfirmed", "sameIssueVisitConfirmed", "photos", "isSynthetic")
+        "eventDate", "description", "locationConfirmed", "sameIssueVisitConfirmed", "photos", "isSynthetic",
+        "channelId", "province", "city", "district", "purpose", "contactName", "contactPhone", "mediaInterview",
+        "noticeAccepted", "albumAcceptanceConfirmed", "photographerReference", "addressSuggestion", "handoff")
     private val gson = GsonBuilder().serializeNulls().setPrettyPrinting().disableJdkUnsafe().setStrictness(Strictness.STRICT)
         .registerTypeAdapter(ReportPhotoRole::class.java, JsonDeserializer { value, _, _ -> ReportPhotoRole.valueOf(value.asString) }).create()
     fun encode(draft: ReportDraft): String = gson.toJson(draft)
@@ -42,15 +68,16 @@ object ReportCodec {
         val tree = gson.fromJson(text, JsonObject::class.java) ?: error("缺少材料记录")
         require(tree.keySet().all { it in fields }) { "材料记录含未知字段，原文件保留" }
         require(listOf("schemaVersion", "reportId", "revision", "photos").all { tree.has(it) })
-        for (key in listOf("recipient", "category", "address", "landmark", "eventDate", "description", "reportId")) {
+        for (key in listOf("recipient", "category", "address", "landmark", "eventDate", "description", "reportId", "channelId", "province", "city", "district", "purpose", "contactName", "contactPhone", "addressSuggestion")) {
             tree[key]?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) }
         }
         for (key in listOf("schemaVersion", "revision")) {
             require(tree[key].isJsonPrimitive && tree[key].asJsonPrimitive.isNumber && tree[key].toString().matches(Regex("[0-9]+")))
         }
-        for (key in listOf("locationConfirmed", "sameIssueVisitConfirmed")) {
+        for (key in listOf("locationConfirmed", "sameIssueVisitConfirmed", "noticeAccepted", "albumAcceptanceConfirmed")) {
             tree[key]?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) }
         }
+        tree["mediaInterview"]?.takeUnless { it.isJsonNull }?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) }
         tree["isSynthetic"]?.takeUnless { it.isJsonNull }?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) }
         require(tree["photos"].isJsonArray)
         for (photo in tree["photos"].asJsonArray) {
@@ -64,10 +91,33 @@ object ReportCodec {
         requireNotNull(draft.landmark); requireNotNull(draft.eventDate); requireNotNull(draft.description); requireNotNull(draft.photos)
         require(draft.recipient.length <= 120 && draft.category.length <= 120 && draft.address.length <= 200 &&
             draft.landmark.length <= 200 && draft.description.length <= 2000 && draft.eventDate.length <= 10)
+        require(draft.channelId in setOf("GENERIC_MANUAL", Jiangsu12345.ID))
+        require(listOf(draft.province, draft.city, draft.district).all { it.length <= 100 })
+        require(draft.purpose.length <= 100 && draft.contactName.length <= 80 && draft.contactPhone.length <= 32)
+        draft.photographerReference?.validate()
+        require(draft.addressSuggestion.length <= 200)
+        tree["handoff"]?.let { handoff ->
+            require(handoff.isJsonObject && handoff.asJsonObject.keySet().all { it in setOf("receipt", "attemptedOn", "extraRequirements", "rejectedPhotos", "elapsedMinutes", "albumResult", "inspectionIssueId") })
+            handoff.asJsonObject.entrySet().forEach { (key, value) ->
+                require((key == "inspectionIssueId" && value.isJsonNull) || (value.isJsonPrimitive && value.asJsonPrimitive.isString))
+            }
+        }
+        with(draft.handoff) {
+            require(receipt.length <= 200 && extraRequirements.length <= 1000 && rejectedPhotos.length <= 1000)
+            require(attemptedOn.isEmpty() || runCatching { LocalDate.parse(attemptedOn) }.isSuccess)
+            require(elapsedMinutes.isEmpty() || (elapsedMinutes.matches(Regex("[0-9]{1,5}")) && elapsedMinutes.toInt() > 0))
+            require(albumResult in setOf("UNKNOWN", "ACCEPTED", "REJECTED", "NOT_NEEDED"))
+            require(inspectionIssueId == null || CaptureFiles.validId(inspectionIssueId))
+        }
         require(draft.photos.size <= MAX_PHOTOS && draft.photos.map { it.photoId }.distinct().size == draft.photos.size)
         draft.photos.forEach { require(CaptureFiles.validId(it.photoId)); requireNotNull(it.role) }
         return draft
     }
+}
+
+enum class ReportTextPart { PURPOSE, ADDRESS, BODY }
+object ReportPaste {
+    fun address(report: ReportDraft): String = report.address.trim() + report.landmark.trim().takeIf { it.isNotBlank() }?.let { "；参照物：" + it }.orEmpty()
 }
 
 object ReportReadiness {
@@ -78,6 +128,14 @@ object ReportReadiness {
 
     fun reasons(report: ReportDraft, entries: Map<String, LibraryEntry>): List<String> {
         val reasons = mutableListOf<String>()
+        if (report.channelId == Jiangsu12345.ID) {
+            if (report.province != "江苏省" || report.city.isBlank() || report.district.isBlank()) reasons += "请填写江苏省、市、区县（以官方区划选项为准）"
+            if (ReportPaste.address(report).length > 200) reasons += "详细地址与参照物合计超过网页200字，请精简"
+            if (report.purpose.isBlank() || report.purpose.length > 100) reasons += "请填写100字以内的诉求目的"
+            if (report.contactName.isBlank() || !report.contactPhone.matches(Regex("[+0-9() -]{5,32}"))) reasons += "请填写联系人及有效联系电话，并在官方个人信息中核对"
+            if (report.mediaInterview == null) reasons += "请选择是否接受媒体采访"
+            if (!report.noticeAccepted) reasons += "请阅读官方须知并确认联系方式与个人信息告知"
+        }
         if (report.recipient.isBlank()) reasons += "请填写实际接收人或提交渠道"
         if (report.category.isBlank()) reasons += "请按接收方的选项填写问题分类"
         if (report.address.isBlank() || !report.locationConfirmed) reasons += "请填写并确认问题地址"
@@ -136,7 +194,39 @@ class ReportRepository(private val root: File, private val texts: AtomicTextFile
         val draft = ReportDraft(reportId = UUID.randomUUID().toString(),
             address = entry?.draft?.address ?: "", description = entry?.draft?.description ?: "", eventDate = entry?.draft?.eventDate ?: "",
             photos = entry?.let { listOf(ReportPhoto(it.draft.photoId, ReportPhotoRole.DETAIL)) } ?: emptyList(),
-            isSynthetic = entry?.draft?.isSynthetic)
+            isSynthetic = entry?.draft?.isSynthetic, photographerReference = entry?.draft?.photographerReference)
+        texts.write(path(draft.reportId), ReportCodec.encode(draft))
+        return draft
+    }
+    fun createOnSite(id: String = UUID.randomUUID().toString()): ReportDraft {
+        require(CaptureFiles.validId(id) && !path(id).exists())
+        val draft = ReportDraft(reportId = id, isSynthetic = false)
+        texts.write(path(id), ReportCodec.encode(draft))
+        return draft
+    }
+    /** Attach after USB transfer without changing the address confirmed on site. Duplicate IDs are no-ops. */
+    fun attachBatch(id: String, expectedRevision: Long, photoIds: List<String>): ReportDraft {
+        val old = load(id)
+        require(old.revision == expectedRevision) { "材料已更新，请重新选择" }
+        require(old.address.isNotBlank() && old.landmark.isNotBlank() && old.locationConfirmed) { "请先在现场填好地址和参照物，并确认对方能找到" }
+        require(photoIds.isNotEmpty() && photoIds.size <= 100 && photoIds.distinct().size == photoIds.size)
+        val added = photoIds.filter { next -> old.photos.none { it.photoId == next } }
+        if (added.isEmpty()) return old
+        require(old.photos.size + added.size <= ReportCodec.MAX_PHOTOS) { "这份材料最多5张，请从本批中选择可加入的照片" }
+        return save(old.copy(photos = old.photos + added.map { ReportPhoto(it) }, sameIssueVisitConfirmed = false), old.revision)
+    }
+    fun createBatch(photoIds: List<String>, channelId: String = "GENERIC_MANUAL"): ReportDraft {
+        require(photoIds.size in 1..ReportCodec.MAX_PHOTOS && photoIds.distinct().size == photoIds.size) { "每份材料请选择1–5张照片" }
+        val selected = photoIds.map(library::load)
+        require(selected.all { it.draft.isSynthetic == selected.first().draft.isSynthetic }) { "演示照片与真实材料不能混用" }
+        val first = selected.first().draft
+        val draft = ReportDraft(reportId = UUID.randomUUID().toString(), channelId = channelId,
+            recipient = if (channelId == Jiangsu12345.ID) "江苏12345网页个人诉求" else "",
+            province = if (channelId == Jiangsu12345.ID) "江苏省" else "",
+            address = first.address, description = first.description, eventDate = first.eventDate,
+            photographerReference = first.photographerReference,
+            photos = photoIds.map { ReportPhoto(it) }, isSynthetic = first.isSynthetic)
+        ReportCodec.decode(ReportCodec.encode(draft), draft.reportId)
         texts.write(path(draft.reportId), ReportCodec.encode(draft))
         return draft
     }
@@ -212,6 +302,16 @@ class ReportRepository(private val root: File, private val texts: AtomicTextFile
         validate(report, selected(report))
         return text(report)
     }
+    fun submissionPart(id: String, part: ReportTextPart): String {
+        val report = load(id)
+        validate(report, selected(report))
+        val prefix = if (report.isSynthetic == true) "[合成演示，不得真实提交]\n" else ""
+        return prefix + when (part) {
+            ReportTextPart.PURPOSE -> report.purpose.trim()
+            ReportTextPart.ADDRESS -> ReportPaste.address(report)
+            ReportTextPart.BODY -> report.description.trim()
+        }
+    }
     fun prepareShare(id: String, cache: ReviewedShareCache): SharedMaterial {
         val report = load(id)
         val entries = selected(report)
@@ -226,10 +326,19 @@ class ReportRepository(private val root: File, private val texts: AtomicTextFile
         if (report.isSynthetic == true) append("合成演示数据，非现场记录，不得当作真实事项提交。\n\n")
         append("接收人 / 渠道：" + report.recipient.trim() + "\n")
         append("接收方问题分类：" + report.category.trim() + "\n")
-        append("问题地址：" + report.address.trim() + "\n")
-        append("附近参照物 / 设施编号：" + report.landmark.trim() + "\n")
+        if (report.channelId == Jiangsu12345.ID) {
+            append("材料字段依据：江苏12345网页（公开字段核对 " + Jiangsu12345.CHECKED_ON + "）\n" + Jiangsu12345.URL + "\n")
+            append("行政区划：" + report.province + " / " + report.city + " / " + report.district + "\n")
+            append("联系人：" + report.contactName.trim() + " · 联系电话：" + report.contactPhone.trim() + "\n")
+            append("是否接受媒体采访：" + if (report.mediaInterview == true) "是\n" else "否\n")
+            append("相册或打码照片是否被接收，须以本次实际提交结果为准。\n")
+            append("官方附件：最多5个、单个10 MB；本应用每张JPG最多5 MB、长边2048像素。ZIP仅供交接解压，不是表单附件。\n")
+        }
+        append("\n诉求目的：\n" + report.purpose.trim() + "\n\n")
+        append("详细地址：\n" + ReportPaste.address(report) + "\n\n")
+        append("正文：\n" + report.description.trim() + "\n\n")
         append("现场日期（人工确认）：" + report.eventDate + "\n")
-        append("问题说明及处理请求：\n" + report.description.trim() + "\n\n")
+        report.photographerReference?.let { append(it.label() + "\n") }
         report.photos.forEachIndexed { index, photo ->
             append("photo-" + (index + 1).toString().padStart(2, '0') + ".jpg：" + ReportReadiness.roleLabel(photo.role) + "\n")
         }
@@ -246,6 +355,10 @@ class ReportRepository(private val root: File, private val texts: AtomicTextFile
             "reportId" to report.reportId, "reportRevision" to report.revision, "isSynthetic" to report.isSynthetic,
             "recipient" to report.recipient.trim(), "category" to report.category.trim(), "address" to report.address.trim(),
             "landmark" to report.landmark.trim(), "eventDate" to report.eventDate, "description" to report.description.trim(),
+            "channelId" to report.channelId, "province" to report.province, "city" to report.city, "district" to report.district,
+            "purpose" to report.purpose, "contactName" to report.contactName, "contactPhone" to report.contactPhone,
+            "mediaInterview" to report.mediaInterview, "noticeAccepted" to report.noticeAccepted,
+            "photographerReference" to report.photographerReference, "photographerReferenceRole" to "PHOTOGRAPHER_REFERENCE_NOT_ISSUE_LOCATION",
             "photos" to attachments, "submissionMethod" to "USER_SUBMITS_MANUALLY")
         ZipOutputStream(output.buffered()).use { zip ->
             fun entry(name: String, content: ByteArray) { zip.putNextEntry(ZipEntry(name)); zip.write(content); zip.closeEntry() }

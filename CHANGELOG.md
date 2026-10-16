@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-16 — 采集到材料与固定发布签名
+
+- 眼镜新增原始采集包导出到Download/FieldLog，格式接入手机既有导入。
+- 手机导入保留批次并可直接新建材料；首页按选图、材料、提交后复查排列，演示与定位检查移到更多。
+- 最近成功定位可显式选入记录/材料，保留时间、精度和来源，标明拍摄者参考位置而非问题位置。
+- 只按已打开的江苏12345公开页准备字段、实时字数和缺项；区分应用5 MB与官方单附件10 MB，新增联系方式告知及打码相册接收确认。
+- release使用固定私钥并核对公开证书指纹；本地出包、APK校验、安装与手动CI流程支持release，禁止退回debug签名。
+- 本地184项核心回归通过，两端release构建及Lint通过；真实GPS、无GMS、眼镜触控/光学显示、续航发热仍待设备验收；已验证眼镜签名轮换保留数据及随后普通发布覆盖安装。
+
 ## 0.5.0 Phone intake and handoff preview — Unreleased
 
 - Add direct user-selected phone JPEG intake through the system photo picker on Android 13+ with a document-picker fallback. Copy only selected streams into private storage, bound bytes/pixels/count, validate a full batch before commit, and preserve existing edits on exact-byte re-selection. Unknown exposure time and position stay null; imported photos require their own privacy review.
@@ -90,3 +99,10 @@ At this revision, hardware verification, local submission-form acceptance, map/r
 
 - Added the glasses capture app, separate Android phone location probe and durable photo journals.
 - Prepared project-local Windows tools and published the Phase 1 development preview.
+
+## 2026-10-16 现场地址流程补充（手机0.7.0 / code 8）
+
+- 手机先定地址，允许无照片保存；本次定位只提供参考坐标和系统文字建议，失败明确手填，地址/参照物及“对方能找到”由人确认。
+- 导入后优先并入原现场材料，保留地址；新增照片不自动确认角色、同一问题或隐私。
+- 首次交材料不以打码接收为门槛；分段复制目的、详细地址、正文；回执/额外要求/退图/实际耗时留在同一材料的私人记录，不对外导出。
+- 新草稿默认通用人工交接，现场不在中国时不强套江苏。江苏真实市/官方区县尚未锁定，未进行真实提交；复查对照界面沿用现有流程。

@@ -17,6 +17,9 @@ class MainActivity : Activity() {
     private lateinit var records: LinearLayout
     private lateinit var status: TextView
     private lateinit var search: EditText
+    private lateinit var siteDrafts: LinearLayout
+    private lateinit var batchActions: LinearLayout
+    private var batchIds: List<String> = emptyList()
     private var entries = emptyList<LibraryEntry>()
     private var busy = false
     private var pendingTasks = 0
@@ -33,9 +36,14 @@ class MainActivity : Activity() {
         content.addView(OfflineUi.text(this, "整理能找到现场、能看清问题的报修材料，并核对后续处理结果。"))
         status = OfflineUi.text(this, "正在读取记录…")
         content.addView(status)
+        content.addView(OfflineUi.text(this, "1. 人还在现场：先把地址定下来", 19f))
+        content.addView(OfflineUi.button(this, "现场定地址 · 我在这里") {
+            if (!busy) startActivity(Intent(this, OnSiteActivity::class.java))
+        })
+        siteDrafts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; content.addView(siteDrafts)
+        content.addView(OfflineUi.text(this, "眼镜只拍同一处的环境照和细节照。地址确认后，照片可回去再拷。"))
+        content.addView(OfflineUi.text(this, "2. 回来后：导入照片，加入已有材料", 19f))
         content.addView(OfflineUi.button(this, "选择手机照片（JPEG）") { if (!busy) choosePhotos() })
-        content.addView(OfflineUi.button(this, "报修材料（环境照 + 细节照）") { if (!busy) startActivity(Intent(this, ReportActivity::class.java)) })
-        content.addView(OfflineUi.button(this, "问题历史与待复查清单") { if (!busy) startActivity(Intent(this, InspectionActivity::class.java)) })
         content.addView(OfflineUi.button(this, "导入采集包") {
             if (!busy) runCatching {
                 startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -44,23 +52,14 @@ class MainActivity : Activity() {
                 }, 201)
             }.onFailure { status.text = "此设备没有可用的文件选择器" }
         })
-        content.addView(OfflineUi.button(this, "载入复查流程演示") {
-            if (!busy) AlertDialog.Builder(this).setTitle("载入合成复查演示？")
-                .setMessage("生成破损、遮挡、处理后共三张合成图片。问题先停在待复查；第三张供你练习关联和人工确认。")
-                .setNegativeButton("取消", null).setPositiveButton("载入") { _, _ ->
-                    task("正在准备合成复查…", { InspectionSamples.add(store) }) { issue ->
-                        startActivity(Intent(this, InspectionActivity::class.java).putExtra("issueId", issue.issueId))
-                    }
-                }.show()
-        })
-        content.addView(OfflineUi.button(this, "载入演示记录") {
-            if (!busy) AlertDialog.Builder(this).setTitle("载入合成演示？")
-                .setMessage("生成两张合成图片供练习整理、遮挡和导出。演示记录及材料会始终带演示标记。")
-                .setNegativeButton("取消", null).setPositiveButton("载入") { _, _ ->
-                    task("正在准备演示…", { SyntheticSamples.add(store) }) { report -> refresh("已载入 " + report.added + " 条演示记录") }
-                }.show()
-        })
-        content.addView(OfflineUi.button(this, "定位检查") { if (!busy) startActivity(Intent(this, LocationActivity::class.java)) })
+        batchActions = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; content.addView(batchActions)
+        batchIds = savedInstanceState?.getStringArrayList("batchIds") ?: emptyList()
+        renderBatch()
+        content.addView(OfflineUi.text(this, "3. 整理材料：核对字段、逐张审阅、人工提交", 19f))
+        content.addView(OfflineUi.button(this, "报修材料（继续草稿 / 新建）") { if (!busy) startActivity(Intent(this, ReportActivity::class.java)) })
+        content.addView(OfflineUi.text(this, "4. 记下回执，下次路过再复查", 19f))
+        content.addView(OfflineUi.button(this, "问题历史与待复查清单") { if (!busy) startActivity(Intent(this, InspectionActivity::class.java)) })
+        content.addView(OfflineUi.button(this, "更多：演示与定位检查") { if (!busy) showTools() })
         draftsOnly = CheckBox(this).apply {
             text = "仅显示照片未审阅的记录"
             isChecked = savedInstanceState?.getBoolean("draftsOnly", false) ?: false
@@ -77,7 +76,29 @@ class MainActivity : Activity() {
         content.addView(search)
         records = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(records)
-        content.addView(OfflineUi.button(this, "清除演示记录") {
+        OfflineUi.install(this, content)
+    }
+
+    private fun showTools() {
+        val box = OfflineUi.column(this)
+        box.addView(OfflineUi.button(this, "载入复查流程演示") {
+            if (!busy) AlertDialog.Builder(this).setTitle("载入合成复查演示？")
+                .setMessage("生成破损、遮挡、处理后共三张合成图片。问题先停在待复查；第三张供你练习关联和人工确认。")
+                .setNegativeButton("取消", null).setPositiveButton("载入") { _, _ ->
+                    task("正在准备合成复查…", { InspectionSamples.add(store) }) { issue ->
+                        startActivity(Intent(this, InspectionActivity::class.java).putExtra("issueId", issue.issueId))
+                    }
+                }.show()
+        })
+        box.addView(OfflineUi.button(this, "载入演示记录") {
+            if (!busy) AlertDialog.Builder(this).setTitle("载入合成演示？")
+                .setMessage("生成两张合成图片供练习整理、遮挡和导出。演示记录及材料会始终带演示标记。")
+                .setNegativeButton("取消", null).setPositiveButton("载入") { _, _ ->
+                    task("正在准备演示…", { SyntheticSamples.add(store) }) { report -> refresh("已载入 " + report.added + " 条演示记录") }
+                }.show()
+        })
+        box.addView(OfflineUi.button(this, "定位检查") { if (!busy) startActivity(Intent(this, LocationActivity::class.java)) })
+        box.addView(OfflineUi.button(this, "清除演示记录") {
             if (!busy) AlertDialog.Builder(this).setTitle("删除合成演示记录？")
                 .setMessage("删除带演示标记的问题历史、记录及其照片。")
                 .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ ->
@@ -86,17 +107,125 @@ class MainActivity : Activity() {
                     }) { refresh("演示记录已清除") }
                 }.show()
         })
-        OfflineUi.install(this, content)
-    }
 
-    override fun onResume() { super.onResume(); refresh() }
-    private fun refresh(message: String? = null) {
+        AlertDialog.Builder(this).setTitle("演示与定位工具").setView(ScrollView(this).apply { addView(box) }).setNegativeButton("关闭", null).show()
+    }
+    private fun importComplete(report: ImportReport, message: String) {
+        batchIds = report.photoIds; renderBatch(); refresh(message) { if (batchIds.isNotEmpty()) chooseTargetReport() }
+    }
+    private fun renderBatch() {
+        batchActions.removeAllViews()
+        if (batchIds.isEmpty()) return
+        batchActions.addView(OfflineUi.text(this, "本批共 " + batchIds.size + " 张（含已存在的重复照片）。加入现场已写好地址的那份材料，再核对角色、同一问题和隐私。"))
+        batchActions.addView(OfflineUi.button(this, "把这批照片加入已有材料") { if (!busy) chooseTargetReport() })
+        batchActions.addView(OfflineUi.button(this, "其他事项：用这批照片另建材料") { if (!busy) chooseBatch() })
+    }
+    private fun chooseTargetReport() {
         if (busy) return
-        task(message ?: "正在读取记录…", { runCatching { store.shares.pruneExpired() }; store.library.scan() }) { loaded ->
+        task("正在查找现场材料…", { store.reports.scan() }) { listing ->
+            val candidates = listing.reports.filter { it.locationConfirmed && it.address.isNotBlank() && it.landmark.isNotBlank() }
+            if (candidates.isEmpty()) {
+                AlertDialog.Builder(this).setTitle("还没有确认好地址的材料")
+                    .setMessage("照片已导入并保留。请先补好现场地址和参照物，再把这批照片加入同一份材料。")
+                    .setNegativeButton("稍后整理", null).setPositiveButton("查看已有材料") { _, _ ->
+                        startActivity(Intent(this, ReportActivity::class.java))
+                    }.show()
+            } else AlertDialog.Builder(this).setTitle("加入哪份已确认地址的材料？")
+                .setItems(candidates.map { (if (it.isSynthetic == true) "[演示] " else "") + it.address + " · " + it.photos.size + "/5张 · #" + it.reportId.take(8) }.toTypedArray()) { _, index ->
+                    val target = candidates[index]
+                    task("正在读取本批照片…", { batchIds.map { store.library.load(it) } }) { batch ->
+                        val available = batch.filter { entry -> target.photos.none { it.photoId == entry.draft.photoId } }
+                        if (available.isEmpty()) startActivity(Intent(this, ReportActivity::class.java).putExtra("reportId", target.reportId))
+                        else pickBatchForReport(target, available)
+                    }
+                }.setNegativeButton("暂不加入", null).show()
+        }
+    }
+    private fun pickBatchForReport(target: ReportDraft, candidates: List<LibraryEntry>) {
+        val slots = ReportCodec.MAX_PHOTOS - target.photos.size
+        if (slots <= 0) { status.text = "这份材料已有5张照片，请先进入材料移除不需要的照片。"; return }
+        val selected = linkedSetOf<String>()
+        val rows = OfflineUi.column(this)
+        rows.addView(OfflineUi.text(this, "地址：" + target.address + "\n参照物：" + target.landmark + "\n原地址和确认会保留；本次只加照片，不自动确认角色或同一问题。"))
+        val dialog = AlertDialog.Builder(this).setTitle("选入本批照片（还可加" + slots + "张）")
+            .setView(ScrollView(this).apply { addView(rows) }).setNegativeButton("取消", null)
+            .setPositiveButton("加入这份材料") { _, _ ->
+                task("正在保留地址并加入照片…", { store.reports.attachBatch(target.reportId, target.revision, candidates.map { it.draft.photoId }.filter { it in selected }) }) { updated ->
+                    startActivity(Intent(this, ReportActivity::class.java).putExtra("reportId", updated.reportId))
+                }
+            }.create()
+        val previews = mutableListOf<Pair<java.io.File, ImageView>>()
+        for ((index, entry) in candidates.withIndex()) {
+            val card = OfflineUi.card(this)
+            val image = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = "本批照片 " + (index + 1) }
+            card.addView(image, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (120 * resources.displayMetrics.density).toInt()))
+            previews += (entry.draft.photoReview?.let { entry.reviewFile(it.fileName) } ?: entry.original) to image
+            val check = CheckBox(this).apply {
+                text = "照片 " + (index + 1) + " · #" + entry.draft.photoId.take(8) + if (entry.draft.isSynthetic) " [演示]" else ""
+                isEnabled = target.isSynthetic == null || target.isSynthetic == entry.draft.isSynthetic
+            }
+            check.setOnCheckedChangeListener { _, checked ->
+                if (checked && selected.size >= slots) { check.isChecked = false; Toast.makeText(this, "最多再加" + slots + "张", Toast.LENGTH_SHORT).show() }
+                else if (checked) selected += entry.draft.photoId else selected -= entry.draft.photoId
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = selected.isNotEmpty()
+            }
+            card.addView(check); rows.addView(card)
+            if (candidates.size <= slots && check.isEnabled) { selected += entry.draft.photoId; check.isChecked = true }
+        }
+        dialog.show(); dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = selected.isNotEmpty()
+        PrivateProbeStore.fileExecutor.execute {
+            for ((file, image) in previews) {
+                val bitmap = runCatching { store.uprightPreview(file, 192) }.getOrNull() ?: continue
+                runOnUiThread { if (isDestroyed || !dialog.isShowing) bitmap.recycle() else image.setImageBitmap(bitmap) }
+            }
+        }
+    }
+    private fun chooseBatch() {
+        fun create(ids: List<String>) { startActivity(Intent(this, ReportActivity::class.java).putExtra("create", true).putStringArrayListExtra("photoIds", ArrayList(ids))) }
+        if (batchIds.size <= ReportCodec.MAX_PHOTOS) { create(batchIds); return }
+        task("正在读取本批照片…", { batchIds.map { store.library.load(it) } }) { candidates ->
+            val selected = linkedSetOf<String>()
+            val rows = OfflineUi.column(this)
+            val dialog = AlertDialog.Builder(this).setTitle("本批超过5张，请选入1–5张")
+                .setView(ScrollView(this).apply { addView(rows) }).setNegativeButton("取消", null)
+                .setPositiveButton("新建材料") { _, _ -> create(batchIds.filter { it in selected }) }.create()
+            val previews = mutableListOf<Pair<java.io.File, ImageView>>()
+            for ((index, entry) in candidates.withIndex()) {
+                val card = OfflineUi.card(this)
+                val image = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = "本批照片 " + (index + 1) }
+                card.addView(image, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (120 * resources.displayMetrics.density).toInt()))
+                previews += (entry.draft.photoReview?.let { entry.reviewFile(it.fileName) } ?: entry.original) to image
+                val check = CheckBox(this).apply { text = "照片 " + (index + 1) + " · #" + entry.draft.photoId.take(8) }
+                check.setOnCheckedChangeListener { _, checked ->
+                    if (checked && selected.size >= ReportCodec.MAX_PHOTOS) { check.isChecked = false; Toast.makeText(this, "每份材料最多5张，其他照片保留在列表", Toast.LENGTH_SHORT).show() }
+                    else if (checked) selected += entry.draft.photoId else selected -= entry.draft.photoId
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = selected.isNotEmpty()
+                }
+                card.addView(check); rows.addView(card)
+            }
+            dialog.show(); dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
+            PrivateProbeStore.fileExecutor.execute {
+                for ((file, image) in previews) {
+                    val bitmap = runCatching { store.uprightPreview(file, 192) }.getOrNull() ?: continue
+                    runOnUiThread { if (isDestroyed || !dialog.isShowing) bitmap.recycle() else image.setImageBitmap(bitmap) }
+                }
+            }
+        }
+    }
+    override fun onResume() { super.onResume(); refresh() }
+    private fun refresh(message: String? = null, after: (() -> Unit)? = null) {
+        if (busy) return
+        task(message ?: "正在读取记录…", { runCatching { store.shares.pruneExpired() }; store.library.scan() to store.reports.scan() }) { (loaded, materials) ->
             entries = loaded.entries
+            siteDrafts.removeAllViews()
+            for (item in materials.reports.filter { it.isSynthetic != true }.takeLast(8)) {
+                siteDrafts.addView(OfflineUi.button(this, (if (item.locationConfirmed) "地址已确认 · " else "继续定地址 · ") + item.address.ifBlank { "未填写" } + " · #" + item.reportId.take(8)) {
+                    if (!busy) startActivity(Intent(this, OnSiteActivity::class.java).putExtra("reportId", item.reportId))
+                })
+            }
             status.text = (message?.let { it + "\n" } ?: "") + "本机共 " + entries.size + " 条记录。可选择手机 JPEG 或导入采集包。"
             if (loaded.unreadableCount > 0) status.append("\n有 " + loaded.unreadableCount + " 条记录无法读取，原文件已保留。")
-            renderEntries()
+            renderEntries(); after?.invoke()
         }
     }
     private fun renderEntries() {
@@ -153,7 +282,7 @@ class MainActivity : Activity() {
         if (requestCode == 201 && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             task("正在校验并导入…", { checkNotNull(contentResolver.openInputStream(uri)).use { store.library.importPackage(it) } }) { report ->
-                refresh("导入 " + report.added + " 条，跳过 " + report.duplicates + " 条重复记录")
+                importComplete(report, "导入 " + report.added + " 条，跳过 " + report.duplicates + " 条重复记录")
             }
         }
     }
@@ -174,10 +303,11 @@ class MainActivity : Activity() {
             store.library.importPhotos(uris.map { uri -> { checkNotNull(contentResolver.openInputStream(uri)) { "照片暂时无法读取，请重新选择" } } })
         }) { report ->
             page = 0
-            refresh("已导入 " + report.added + " 张，跳过 " + report.duplicates + " 张重复照片。下一步：打开记录审阅照片，或建立报修材料。")
+            importComplete(report, "已导入 " + report.added + " 张，跳过 " + report.duplicates + " 张重复照片")
         }
     }
     override fun onSaveInstanceState(out: Bundle) {
+        out.putStringArrayList("batchIds", ArrayList(batchIds))
         out.putInt("page", page)
         out.putBoolean("draftsOnly", draftsOnly.isChecked)
         out.putString("query", search.text.toString())

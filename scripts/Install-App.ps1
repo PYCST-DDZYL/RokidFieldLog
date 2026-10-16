@@ -1,7 +1,8 @@
 ﻿param(
     [Parameter(Mandatory=$true)][ValidateSet('glasses','phone')][string]$Target,
     [switch]$ConfirmInstallation,
-    [switch]$StartApp
+    [switch]$StartApp,
+    [switch]$Release
 )
 if (!$ConfirmInstallation) { throw '设备安装须经用户明确授权，确认后使用 -ConfirmInstallation。' }
 . (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
@@ -9,9 +10,10 @@ $adbExecutable = Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe'
 $env:ANDROID_ADB_LOG_PATH = Join-Path $localRoot 'adb-server.log'
 $expectedPackage = "org.rokidfieldlog.$Target"
 $moduleName = if ($Target -eq 'glasses') { 'glasses-app' } else { 'phone-app' }
-$relativeApk = "$moduleName/build/outputs/apk/debug/$moduleName-debug.apk"
+$variant = if ($Release) { "release" } else { "debug" }
+$relativeApk = "$moduleName/build/outputs/apk/$variant/$moduleName-$variant.apk"
 if (!(Test-Path -LiteralPath (Join-Path $projectRoot $relativeApk))) { throw 'Build the APK first.' }
-& (Join-Path $PSScriptRoot 'Test-Apk.ps1') -Target $Target
+& (Join-Path $PSScriptRoot 'Test-Apk.ps1') -Target $Target -Variant $variant
 $candidates = @()
 $rows = & $adbExecutable -P 5047 devices -l
 foreach ($row in $rows) {

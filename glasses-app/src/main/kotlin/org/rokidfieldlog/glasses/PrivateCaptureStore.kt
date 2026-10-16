@@ -11,7 +11,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /** Android adapter. All disk operations are called on background executors. */
-class PrivateCaptureStore(context: Context, rootOverride: File? = null) {
+class PrivateCaptureStore(private val context: Context, rootOverride: File? = null) {
     private val filesRoot = context.filesDir.canonicalFile
     private val root = (rootOverride ?: File(filesRoot, "fieldlog")).canonicalFile
     private val records = File(root, "records")
@@ -84,6 +84,24 @@ class PrivateCaptureStore(context: Context, rootOverride: File? = null) {
     fun savedPhotoCount(): Int = repository.savedPhotoCount()
     fun latestSaved(): SavedCapture? = repository.latestSaved()
     fun deleteCapture(photoId: String) = repository.deleteCapture(photoId)
+    /** Public USB-transfer file; MediaStore pending rows are removed on failure. Originals are unredacted. */
+    fun exportPackage(): Pair<String, Int> {
+        val name = "FieldLog_capture_" + System.currentTimeMillis() + ".zip"
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+            put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/zip")
+            put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/FieldLog")
+            put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val resolver = context.contentResolver
+        val uri = checkNotNull(resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)) { "下载目录不可写" }
+        try {
+            val count = checkNotNull(resolver.openOutputStream(uri, "w")).use { repository.writePackage(it) }
+            check(resolver.update(uri, android.content.ContentValues().apply { put(android.provider.MediaStore.Downloads.IS_PENDING, 0) }, null, null) == 1)
+            return name to count
+        } catch (error: Exception) { runCatching { resolver.delete(uri, null, null) }; throw error }
+    }
+
     fun deleteAllProjectData() {
         check(root.canonicalFile.parentFile == filesRoot) { "Unsafe data path" }
         repository.deleteAllProjectData()

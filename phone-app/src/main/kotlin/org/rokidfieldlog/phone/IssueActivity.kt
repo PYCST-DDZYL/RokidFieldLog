@@ -28,6 +28,7 @@ class IssueActivity : Activity() {
     private lateinit var latitude: EditText
     private lateinit var longitude: EditText
     private lateinit var crs: Spinner
+    private var photographerReference: PhotographerReference? = null
     private var eventDate = ""
     private var entry: LibraryEntry? = null
     private var busy = false
@@ -100,6 +101,9 @@ class IssueActivity : Activity() {
             content.addView(OfflineUi.text(this, "原始拍摄者位置：" + observation.latitude + ", " + observation.longitude +
                 "（" + observation.coordinateSystem + "）。问题实际位置需要独立确认。"))
         }
+        photographerReference = savedForm?.takeIf { it.getLong("formRevision", -1) == draft.revision }?.getString("referenceDraft")?.let { runCatching { DraftCodec.decode(it, id).photographerReference }.getOrNull() } ?: draft.photographerReference
+        if (savedForm?.getBoolean("referenceRemoved", false) == true) photographerReference = null
+        ReferenceLocationPicker.add(this, content, photographerReference) { photographerReference = it }
         content.addView(OfflineUi.text(this, "照片：" + if (draft.photoReview == null) "尚未完成隐私审阅" else "已审阅导出副本"))
         content.addView(OfflineUi.button(this, "关联问题 / 添加本次观察") {
             saveForm { startActivity(Intent(this, InspectionLinkActivity::class.java).putExtra("photoId", id)) }
@@ -161,7 +165,7 @@ class IssueActivity : Activity() {
         }
         return current.copy(category = IssueCategory.entries.getOrNull(category.selectedItemPosition - 1),
             address = address.text.toString().trim(), addressConfirmed = confirmed.isChecked,
-            description = description.text.toString().trim(), eventDate = eventDate, issuePosition = point)
+            description = description.text.toString().trim(), eventDate = eventDate, issuePosition = point, photographerReference = photographerReference)
     }
     private fun saveForm(done: () -> Unit) {
         if (busy || entry == null) return
@@ -246,6 +250,8 @@ class IssueActivity : Activity() {
     private fun captureFormState(out: Bundle) {
         entry?.let {
             if (::category.isInitialized) {
+                out.putString("referenceDraft", DraftCodec.encode(it.draft.copy(photographerReference = photographerReference)))
+                out.putBoolean("referenceRemoved", photographerReference == null)
                 out.putLong("formRevision", it.draft.revision); out.putInt("category", category.selectedItemPosition)
                 out.putString("address", address.text.toString()); out.putBoolean("confirmed", confirmed.isChecked)
                 out.putString("description", description.text.toString()); out.putString("date", eventDate)

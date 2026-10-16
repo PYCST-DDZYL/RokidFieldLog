@@ -72,6 +72,48 @@ class ReportMaterialsTest {
     private fun unzip(file: File) = linkedMapOf<String, ByteArray>().apply {
         ZipInputStream(file.inputStream()).use { zip -> while (true) { val entry = zip.nextEntry ?: break; put(entry.name, zip.readBytes()); zip.closeEntry() } }
     }
+    @Test fun importedBatchBuildsOneDraftAndDoesNotAssertPhotoRolesOrLocation() {
+        val first = imported(Color.RED); val second = imported(Color.BLUE)
+        val batch = reports.createBatch(listOf(first.draft.photoId, second.draft.photoId))
+        assertEquals("GENERIC_MANUAL", batch.channelId)
+        assertEquals(listOf(first.draft.photoId, second.draft.photoId), batch.photos.map { it.photoId })
+        assertTrue(batch.photos.all { it.role == ReportPhotoRole.ADDITIONAL })
+        assertFalse(batch.locationConfirmed); assertFalse(batch.sameIssueVisitConfirmed)
+        assertNull(batch.photographerReference)
+        assertThrows(IllegalArgumentException::class.java) { reports.createBatch(List(6) { first.draft.photoId }) }
+        val real = imported(Color.GREEN, synthetic = false)
+        assertThrows(IllegalArgumentException::class.java) { reports.createBatch(listOf(first.draft.photoId, real.draft.photoId)) }
+    }
+    @Test fun jiangsuChecklistAndExportSeparateOfficialFieldsAndOptionalReference() {
+        val initial = ready()
+        val incomplete = initial.copy(channelId = Jiangsu12345.ID)
+        val missing = ReportReadiness.reasons(incomplete, reports.selected(initial)).joinToString()
+        for (word in listOf("区县", "诉求目的", "联系人", "媒体", "须知")) assertTrue(word, missing.contains(word))
+        val fix = PhotographerReference(12.4, -45.7, accuracyMeters = 20f, locationTimeUtcMillis = 123000, selectedAtUtcMillis = 124000, source = "SYNTHETIC_ONLY")
+        val complete = reports.save(incomplete.copy(province = "江苏省", city = "合成市", district = "合成区", purpose = "请检查并修复合成问题",
+            contactName = "合成联系人", contactPhone = "00000000000", mediaInterview = false, noticeAccepted = true,
+            albumAcceptanceConfirmed = true, photographerReference = fix), initial.revision)
+        assertTrue(ReportReadiness.reasons(complete, reports.selected(complete)).isEmpty())
+        val zip = reports.prepare(complete.reportId)
+        val archive = unzip(zip.file)
+        val text = archive.getValue("report.txt").toString(Charsets.UTF_8)
+        assertTrue(text.contains(fix.label())); assertTrue(text.contains("非问题位置"))
+        assertTrue(text.contains("单个10 MB")); assertTrue(text.contains("最多5 MB"))
+        val summary = com.google.gson.JsonParser.parseString(archive.getValue("summary.json").toString(Charsets.UTF_8)).asJsonObject
+        assertEquals(12.4, summary["photographerReference"].asJsonObject["latitude"].asDouble, 0.0)
+        assertFalse(summary.has("issuePosition")); assertEquals(complete, reports.load(complete.reportId))
+        assertTrue(reports.selected(complete).values.all { it.draft.stage == SubmissionStage.DRAFT })
+        assertThrows(IllegalArgumentException::class.java) { ReportCodec.decode(ReportCodec.encode(complete.copy(purpose = "字".repeat(101))), complete.reportId) }
+    }
+    @Test fun oldMaterialDefaultsRemainReadableAndInvalidReferencesAreRejected() {
+        val draft = reports.create()
+        val tree = com.google.gson.JsonParser.parseString(ReportCodec.encode(draft)).asJsonObject
+        for (key in listOf("channelId", "province", "city", "district", "purpose", "contactName", "contactPhone", "mediaInterview", "noticeAccepted", "albumAcceptanceConfirmed", "photographerReference", "addressSuggestion", "handoff")) tree.remove(key)
+        assertEquals(draft, ReportCodec.decode(tree.toString(), draft.reportId))
+        val invalid = PhotographerReference(91.0, 0.0, locationTimeUtcMillis = 123, selectedAtUtcMillis = 124, source = "SYNTHETIC_ONLY")
+        assertThrows(IllegalArgumentException::class.java) { reports.save(draft.copy(photographerReference = invalid), draft.revision) }
+    }
+
     @Test fun twoReviewedViewsExportWithOneSharedDescriptionAndWithoutPrivateSource() {
         val report = ready()
         val prepared = reports.prepare(report.reportId)
@@ -277,5 +319,67 @@ class ReportMaterialsTest {
         assertEquals(edited.draft.eventDate, report.eventDate)
         assertTrue(report.category.isBlank()); assertTrue(report.recipient.isBlank())
         assertFalse(report.locationConfirmed); assertFalse(report.sameIssueVisitConfirmed)
+    }
+
+    @Test fun onsiteAddressSurvivesLaterPhotoImportAndBatchMerge() {
+        val blank = reports.createOnSite()
+        assertTrue(reports.load(blank.reportId).photos.isEmpty())
+        assertEquals(false, blank.isSynthetic)
+        assertEquals("GENERIC_MANUAL", blank.channelId)
+        val fix = PhotographerReference(12.4, -45.7, accuracyMeters = 20f, locationTimeUtcMillis = 123000, selectedAtUtcMillis = 124000, source = "SYNTHETIC_ONLY")
+        val onSite = reports.save(blank.copy(address = "Synthetic overseas park, east gate", landmark = "Marker A-017",
+            eventDate = "2020-01-02", locationConfirmed = true, photographerReference = fix, addressSuggestion = "Synthetic system suggestion"), blank.revision)
+        val first = imported(Color.RED, synthetic = false); val second = imported(Color.BLUE, synthetic = false)
+        val merged = reports.attachBatch(onSite.reportId, onSite.revision, listOf(first.draft.photoId, second.draft.photoId))
+        assertEquals(onSite.reportId, merged.reportId)
+        assertEquals(onSite.address, merged.address); assertEquals(onSite.landmark, merged.landmark)
+        assertEquals(onSite.addressSuggestion, merged.addressSuggestion); assertEquals(fix, merged.photographerReference)
+        assertTrue(merged.locationConfirmed); assertFalse(merged.sameIssueVisitConfirmed)
+        assertTrue(merged.photos.all { it.role == ReportPhotoRole.ADDITIONAL })
+        assertTrue(reports.selected(merged).values.all { it.draft.photoReview == null })
+        assertEquals(merged, reports.attachBatch(merged.reportId, merged.revision, listOf(first.draft.photoId, second.draft.photoId)))
+        assertEquals(1, reports.scan().reports.size)
+        assertThrows(IllegalArgumentException::class.java) { reports.attachBatch(merged.reportId, onSite.revision, listOf(first.draft.photoId)) }
+    }
+    @Test fun attachingBatchRequiresConfirmedAddressAndNeverMixesDemoWithRealSite() {
+        val blank = reports.createOnSite()
+        val real = imported(Color.RED, synthetic = false)
+        assertThrows(IllegalArgumentException::class.java) { reports.attachBatch(blank.reportId, blank.revision, listOf(real.draft.photoId)) }
+        val confirmed = reports.save(blank.copy(address = "Synthetic address", landmark = "Synthetic landmark", locationConfirmed = true), blank.revision)
+        val demo = imported(Color.BLUE)
+        assertThrows(IllegalArgumentException::class.java) { reports.attachBatch(confirmed.reportId, confirmed.revision, listOf(demo.draft.photoId)) }
+        assertEquals(confirmed, reports.load(confirmed.reportId))
+        val ids = (1..6).map { imported(Color(it * 25, 50, 60), synthetic = false).draft.photoId }
+        assertThrows(IllegalArgumentException::class.java) { reports.attachBatch(confirmed.reportId, confirmed.revision, ids) }
+        assertEquals(confirmed, reports.load(confirmed.reportId))
+    }
+    @Test fun firstJiangsuHandoffDoesNotRequirePriorAcceptanceOfRedactedPhotos() {
+        val initial = ready()
+        val report = reports.save(initial.copy(channelId = Jiangsu12345.ID, province = "江苏省", city = "合成市", district = "合成区",
+            purpose = "合成目的，仅测试", contactName = "合成联系人", contactPhone = "00000000000", mediaInterview = false,
+            noticeAccepted = true, albumAcceptanceConfirmed = false,
+            handoff = ReportHandoff(receipt = "PRIVATE_RECEIPT_123", attemptedOn = "2020-01-03", extraRequirements = "PRIVATE_EXTRA",
+                rejectedPhotos = "PRIVATE_REJECTED", elapsedMinutes = "17", albumResult = "UNKNOWN")), initial.revision)
+        assertTrue(ReportReadiness.reasons(report, reports.selected(report)).isEmpty())
+        val text = reports.submissionText(report.reportId)
+        assertFalse(text.contains("已人工确认接收方接受"))
+        assertTrue(text.indexOf("诉求目的：") < text.indexOf("详细地址："))
+        assertTrue(text.indexOf("详细地址：") < text.indexOf("正文："))
+        assertEquals("[合成演示，不得真实提交]\n" + report.purpose, reports.submissionPart(report.reportId, ReportTextPart.PURPOSE))
+        assertEquals("[合成演示，不得真实提交]\n" + ReportPaste.address(report), reports.submissionPart(report.reportId, ReportTextPart.ADDRESS))
+        val archive = unzip(reports.prepare(report.reportId).file)
+        val outgoing = text + archive.getValue("summary.json").toString(Charsets.UTF_8)
+        for (value in listOf("PRIVATE_RECEIPT_123", "PRIVATE_EXTRA", "PRIVATE_REJECTED", "albumAcceptanceConfirmed", "elapsedMinutes")) assertFalse(value, outgoing.contains(value))
+        assertEquals(report.handoff, reports.load(report.reportId).handoff)
+        assertTrue(reports.selected(report).values.all { it.draft.stage == SubmissionStage.DRAFT })
+        val tooLong = report.copy(address = "字".repeat(180), landmark = "字".repeat(30))
+        assertTrue(ReportReadiness.reasons(tooLong, reports.selected(report)).any { it.contains("合计超过") })
+    }
+    @Test fun invalidPrivateAttemptNotesDoNotEnterStoredContract() {
+        val draft = reports.createOnSite()
+        for (handoff in listOf(ReportHandoff(attemptedOn = "yesterday"), ReportHandoff(elapsedMinutes = "0"),
+            ReportHandoff(albumResult = "ASSUMED_ACCEPTED"), ReportHandoff(inspectionIssueId = "../bad"))) {
+            assertThrows(IllegalArgumentException::class.java) { reports.save(draft.copy(handoff = handoff), draft.revision) }
+        }
     }
 }

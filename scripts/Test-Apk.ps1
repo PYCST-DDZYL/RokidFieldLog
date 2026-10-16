@@ -1,14 +1,15 @@
-﻿param([Parameter(Mandatory=$true)][ValidateSet('glasses','phone')][string]$Target)
+﻿param([Parameter(Mandatory=$true)][ValidateSet('glasses','phone')][string]$Target, [ValidateSet('debug','release')][string]$Variant = 'debug')
 . (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
 $moduleName = if ($Target -eq 'glasses') { 'glasses-app' } else { 'phone-app' }
-$relativeApk = "$moduleName/build/outputs/apk/debug/$moduleName-debug.apk"
+$relativeApk = "$moduleName/build/outputs/apk/$Variant/$moduleName-$Variant.apk"
 $analyzer = Join-Path $env:ANDROID_HOME 'cmdline-tools/latest/bin/apkanalyzer.bat'
 $expectedPackage = "org.rokidfieldlog.$Target"
 $requiredClasses = @("$expectedPackage.MainActivity")
 if ($Target -eq 'glasses') {
-    $requiredClasses += @("$expectedPackage.GlassesApplication", "$expectedPackage.RecoveryInstrumentation", 'org.rokidfieldlog.core.CaptureFiles')
+    $requiredClasses += @("$expectedPackage.GlassesApplication", 'org.rokidfieldlog.core.CaptureFiles', 'org.rokidfieldlog.core.CapturePackage')
+    if ($Variant -eq 'debug') { $requiredClasses += "$expectedPackage.RecoveryInstrumentation" }
 } else {
-    $requiredClasses += @("$expectedPackage.LocationProbe", "$expectedPackage.LocationActivity", "$expectedPackage.IssueActivity", "$expectedPackage.PrivacyActivity", "$expectedPackage.RedactionView", "$expectedPackage.InspectionActivity", "$expectedPackage.InspectionLinkActivity", "$expectedPackage.InspectionCompareActivity", "$expectedPackage.InspectionSamples", "$expectedPackage.ReportActivity", "$expectedPackage.MaterialSharing", "$expectedPackage.ReviewedPhotoProvider", 'org.rokidfieldlog.core.LocationAttempt', 'org.rokidfieldlog.core.OfflineLibrary', 'org.rokidfieldlog.core.MaterialExporter', 'org.rokidfieldlog.core.InspectionRepository', 'org.rokidfieldlog.core.ReportRepository', 'org.rokidfieldlog.core.ReviewedShareCache', 'org.rokidfieldlog.core.MaterialDocumentCopy')
+    $requiredClasses += @("$expectedPackage.OnSiteActivity", "$expectedPackage.AddressSuggestionLookup", "$expectedPackage.ReportHandoffActivity", "$expectedPackage.ReferenceLocationPicker", "org.rokidfieldlog.core.PhotographerReference", "$expectedPackage.LocationProbe", "$expectedPackage.LocationActivity", "$expectedPackage.IssueActivity", "$expectedPackage.PrivacyActivity", "$expectedPackage.RedactionView", "$expectedPackage.InspectionActivity", "$expectedPackage.InspectionLinkActivity", "$expectedPackage.InspectionCompareActivity", "$expectedPackage.InspectionSamples", "$expectedPackage.ReportActivity", "$expectedPackage.MaterialSharing", "$expectedPackage.ReviewedPhotoProvider", 'org.rokidfieldlog.core.LocationAttempt', 'org.rokidfieldlog.core.OfflineLibrary', 'org.rokidfieldlog.core.MaterialExporter', 'org.rokidfieldlog.core.InspectionRepository', 'org.rokidfieldlog.core.ReportRepository', 'org.rokidfieldlog.core.ReviewedShareCache', 'org.rokidfieldlog.core.MaterialDocumentCopy')
 }
 Push-Location $projectRoot
 try {
@@ -34,13 +35,28 @@ try {
             $providers[0].GetAttribute('exported', $androidNamespace) -ne 'false' -or $providers[0].GetAttribute('grantUriPermissions', $androidNamespace) -ne 'true') {
             throw 'Reviewed photo provider is missing or has unsafe access settings.'
         }
-        $pathsLines = & $analyzer resources xml --file /res/xml/reviewed_share_paths.xml $relativeApk
+        # Release resource optimization can shorten res/xml paths. Resolve the named resource first.
+        $packagedPathsResource = ((& $analyzer resources value --config default --type xml --name reviewed_share_paths $relativeApk) -join '').Trim()
+        if ($LASTEXITCODE -ne 0 -or $packagedPathsResource -notmatch '^res/[A-Za-z0-9_/-]+\.xml$') { throw 'Cannot resolve packaged share paths.' }
+        $pathsLines = & $analyzer resources xml --file "/$packagedPathsResource" $relativeApk
         if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect packaged share paths.' }
         [xml]$pathsXml = $pathsLines -join "`n"
         $sharePaths = @($pathsXml.SelectNodes('/paths/*'))
         if ($sharePaths.Count -ne 1 -or $sharePaths[0].LocalName -ne 'cache-path' -or $sharePaths[0].GetAttribute('path') -ne 'reviewed-shares/') {
             throw 'Share provider must expose only the reviewed-shares cache.'
         }
+    }
+    if ($Variant -eq 'release') {
+        $signer = Join-Path $env:ANDROID_HOME 'build-tools/35.0.0/apksigner.bat'
+        $signatureRun = Invoke-ProjectNativeCapture -Executable $signer -NativeArguments @('verify','--verbose','--print-certs',$relativeApk)
+        if ($signatureRun.ExitCode -ne 0) { throw 'Release APK signature verification failed.' }
+        $signatureRun.Lines | Write-Output
+        $certificatePin = (Get-Content -LiteralPath (Join-Path $projectRoot 'release-certificate.sha256') -Raw).Trim()
+        $signatureText = $signatureRun.Lines -join "
+"
+        if ($signatureText -notmatch ('Signer #1 certificate SHA-256 digest: ' + [regex]::Escape($certificatePin))) { throw 'APK does not use the retained release certificate.' }
+        $debugFlag = ((& $analyzer manifest debuggable $relativeApk) -join '').Trim()
+        if ($LASTEXITCODE -ne 0 -or $debugFlag -ne 'false') { throw 'Release APK must not be debuggable.' }
     }
     $apkFile = Get-Item -LiteralPath $relativeApk
     $apkHash = (Get-FileHash -LiteralPath $relativeApk -Algorithm SHA256).Hash.ToLowerInvariant()

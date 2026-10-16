@@ -80,7 +80,7 @@ class PrivacyActivity : Activity() {
         val review = checkNotNull(candidate)
         status.text = "这是实际导出副本：" + review.width + " × " + review.height + "，" + (review.byteCount / 1024) + " KB。请放大检查。"
         zoomControls()
-        val clear = CheckBox(this).apply { text = "照片中没有需要遮挡的第三方信息"; isChecked = false }
+        val clear = CheckBox(this).apply { text = "我已看过整张照片：没有人脸、车牌等需遮挡的第三方信息，无须遮挡"; isChecked = false }
         if (review.masks.isEmpty()) controls.addView(clear)
         val checked = CheckBox(this).apply { text = "我已检查遮挡完整，现场问题仍清楚可辨"; isChecked = false }
         controls.addView(checked)

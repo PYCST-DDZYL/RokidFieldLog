@@ -42,6 +42,7 @@ data class IssueDraft(
     val description: String = "",
     val eventDate: String = "",
     val issuePosition: GeoPoint? = null,
+    val photographerReference: PhotographerReference? = null,
     val photoReview: PhotoReview? = null,
     val stage: SubmissionStage = SubmissionStage.DRAFT,
     val receipt: String = "",
@@ -94,6 +95,7 @@ object DraftCodec {
             require(it.latitude.isFinite() && it.latitude in -90.0..90.0 && it.longitude.isFinite() && it.longitude in -180.0..180.0)
             requireNotNull(it.coordinateSystem)
         }
+        draft.photographerReference?.validate()
         draft.photoReview?.let { review ->
             requireNotNull(review.fileName); requireNotNull(review.originalSha256)
             requireNotNull(review.outputSha256); requireNotNull(review.rendererVersion)

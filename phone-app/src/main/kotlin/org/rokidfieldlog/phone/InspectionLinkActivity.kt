@@ -27,20 +27,29 @@ class InspectionLinkActivity : InspectionScreen() {
     private var observedOn = ""
     private var lastPhotoId = ""
     private var restored: Bundle? = null
+    private var report: ReportDraft? = null
     override fun onCreate(state: Bundle?) {
         super.onCreate(state); restored = state
         val fixedPhoto = intent.getStringExtra("photoId")
         val fixedIssue = intent.getStringExtra("issueId")
-        if (listOfNotNull(fixedPhoto, fixedIssue).any { !CaptureFiles.validId(it) }) { finish(); return }
+        val materialId = intent.getStringExtra("reportId")
+        if (listOfNotNull(fixedPhoto, fixedIssue, materialId).any { !CaptureFiles.validId(it) }) { finish(); return }
         task("正在查找可关联的照片…", {
+            val material = materialId?.let { store.reports.load(it) }
+            if (material != null) require(material.handoff.receipt.isNotBlank() && material.locationConfirmed && material.sameIssueVisitConfirmed) { "请先记录真实回执，并在材料中确认地址及同一次现场照片" }
             val listing = store.inspections.scan()
             check(listing.unreadableCount == 0) { "有问题历史无法读取，请保留数据并先核查" }
-            val linked = fixedPhoto?.let { store.inspections.linkedIssue(it) }
+            val materialLinks = material?.photos?.mapNotNull { store.inspections.linkedIssue(it.photoId) }?.distinctBy { it.issueId }.orEmpty()
+            require(materialLinks.size <= 1) { "材料照片分属多个问题，请先核对" }
+            val linked = fixedPhoto?.let { store.inspections.linkedIssue(it) } ?: materialLinks.singleOrNull()
+            if (material != null && linked != null) store.reports.save(material.copy(handoff = material.handoff.copy(inspectionIssueId = linked.issueId)), material.revision)
             val selectedIssue = fixedIssue?.let { id -> listing.issues.single { it.issueId == id } }
             val used = listing.issues.flatMap { it.observations }.mapNotNull { it.photoId }.toSet()
             val available = store.library.list().filter { (fixedPhoto == null || it.draft.photoId == fixedPhoto) &&
-                it.draft.photoId !in used && (selectedIssue == null || selectedIssue.isSynthetic == it.draft.isSynthetic) }
-            LinkData(available, if (selectedIssue != null) listOf(selectedIssue) else listOf(null) + listing.issues, linked)
+                it.draft.photoId !in used && (selectedIssue == null || selectedIssue.isSynthetic == it.draft.isSynthetic) &&
+                (material == null || material.photos.any { photo -> photo.photoId == it.draft.photoId }) }
+            report = material
+            LinkData(available, if (selectedIssue != null) listOf(selectedIssue) else listOf(null) + listing.issues.filter { material == null || it.isSynthetic == material.isSynthetic }, linked)
         }) { data ->
             if (data.linked != null) {
                 startActivity(Intent(this, InspectionActivity::class.java).putExtra("issueId", data.linked.issueId)); finish()
@@ -71,7 +80,7 @@ class InspectionLinkActivity : InspectionScreen() {
         content.addView(OfflineUi.text(this, "关联到哪个问题")); content.addView(target)
         targetDescription = OfflineUi.text(this, ""); content.addView(targetDescription)
         newFields = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        site = OfflineUi.field(this, "能区分位置的道路、楼栋、地标", entries[photoIndex].draft.address.takeIf { entries[photoIndex].draft.addressConfirmed } ?: "")
+        site = OfflineUi.field(this, "能区分位置的道路、楼栋、地标", report?.address ?: entries[photoIndex].draft.address.takeIf { entries[photoIndex].draft.addressConfirmed } ?: "")
             .apply { filters = arrayOf(InputFilter.LengthFilter(200)) }
         category = spinner(listOf("请选择类别") + IssueCategory.entries.map { MaterialExporter.categoryLabel(it) })
         category.setSelection(entries[photoIndex].draft.category?.ordinal?.plus(1) ?: 0)
@@ -81,13 +90,14 @@ class InspectionLinkActivity : InspectionScreen() {
         visibility = spinner(listOf("请选择可见情况") + InspectionVisibility.entries.map { InspectionText.visibility(it) })
         finding = spinner(listOf("请选择本次观察") + InspectionFinding.entries.map { InspectionText.finding(it) })
         observationFields.addView(visibility); observationFields.addView(finding); content.addView(observationFields)
-        observedOn = saved?.getString("date") ?: entries[photoIndex].draft.eventDate
+        observedOn = saved?.getString("date") ?: report?.eventDate ?: entries[photoIndex].draft.eventDate
         date = OfflineUi.button(this, "观察日期：" + observedOn.ifBlank { "待确认" }) {
             val initial = runCatching { LocalDate.parse(observedOn) }.getOrElse { LocalDate.now() }
             DatePickerDialog(this, { _, year, month, day -> observedOn = LocalDate.of(year, month + 1, day).toString(); updateDate() },
                 initial.year, initial.monthValue - 1, initial.dayOfMonth).show()
         }; content.addView(date)
         note = OfflineUi.field(this, "本次观察说明（最多 500 字）", multiline = true).apply { filters = arrayOf(InputFilter.LengthFilter(500)) }
+        report?.let { note.setText(("材料 #" + it.reportId.take(8) + "；人工登记回执：" + it.handoff.receipt).take(500)) }
         content.addView(note)
         confirmed = CheckBox(this).apply { text = "我已查看照片，核对问题位置、观察日期和所选情况" }; content.addView(confirmed)
         content.addView(OfflineUi.button(this, "保存到问题历史") { submit() })
@@ -101,10 +111,10 @@ class InspectionLinkActivity : InspectionScreen() {
         photos.onItemSelectedListener = selection {
             val entry = entries[photos.selectedItemPosition]
             if (lastPhotoId != entry.draft.photoId) {
-                lastPhotoId = entry.draft.photoId; observedOn = entry.draft.eventDate; updateDate(); confirmed.isChecked = false
+                lastPhotoId = entry.draft.photoId; observedOn = report?.eventDate ?: entry.draft.eventDate; updateDate(); confirmed.isChecked = false
                 visibility.setSelection(0); finding.setSelection(0)
                 if (targets[target.selectedItemPosition] == null) {
-                    site.setText(entry.draft.address.takeIf { entry.draft.addressConfirmed } ?: "")
+                    site.setText(report?.address ?: entry.draft.address.takeIf { entry.draft.addressConfirmed } ?: "")
                     category.setSelection(entry.draft.category?.ordinal?.plus(1) ?: 0)
                 }
             }
@@ -132,9 +142,14 @@ class InspectionLinkActivity : InspectionScreen() {
         if (issue != null && (chosenVisibility == null || chosenFinding == null)) { status.text = "请选择照片可见情况和观察结果"; return }
         val dateValue = observedOn; val noteValue = note.text.toString()
         task("正在校验照片并保存观察…", {
-            if (issue == null) store.inspections.create(label, chosenCategory!!, entry.draft.photoId, dateValue, true, noteValue)
+            val updated = if (issue == null) store.inspections.create(label, chosenCategory!!, entry.draft.photoId, dateValue, true, noteValue)
             else store.inspections.observe(issue.issueId, issue.revision, entry.draft.photoId, dateValue,
                 chosenVisibility!!, chosenFinding!!, true, noteValue)
+            report?.let { material ->
+                val latest = store.reports.load(material.reportId)
+                store.reports.save(latest.copy(handoff = latest.handoff.copy(inspectionIssueId = updated.issueId)), latest.revision)
+            }
+            updated
         }) { updated -> startActivity(Intent(this, InspectionActivity::class.java).putExtra("issueId", updated.issueId)); finish() }
     }
     override fun onSaveInstanceState(out: Bundle) {

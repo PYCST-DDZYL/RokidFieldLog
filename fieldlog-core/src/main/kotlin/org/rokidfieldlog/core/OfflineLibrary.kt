@@ -17,7 +17,7 @@ data class LibraryEntry(val source: RecordDocument, val draft: IssueDraft, val d
     }
 }
 data class LibraryListing(val entries: List<LibraryEntry>, val unreadableCount: Int)
-data class ImportReport(val added: Int, val duplicates: Int)
+data class ImportReport(val added: Int, val duplicates: Int, val photoIds: List<String> = emptyList())
 data class PreparedMaterial(val photoId: String, val revision: Long, val file: File, val sha256: String,
     val profile: MaterialProfile = MaterialProfile())
 
@@ -123,7 +123,7 @@ class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
                 }
                 old == null
             }
-            if (fresh.isEmpty()) return ImportReport(0, itemCount)
+            if (fresh.isEmpty()) return ImportReport(0, itemCount, incoming.captures.map { it.document.record.photoId })
             val transaction = File(staging, "collection").apply { check(mkdirs()) }
             for (capture in fresh) {
                 val id = capture.document.record.photoId
@@ -137,7 +137,7 @@ class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
             }
             check(collections.isDirectory || collections.mkdirs())
             check(transaction.renameTo(File(collections, UUID.randomUUID().toString()))) { "Cannot commit imported collection" }
-            return ImportReport(fresh.size, itemCount - fresh.size)
+            return ImportReport(fresh.size, itemCount - fresh.size, incoming.captures.map { it.document.record.photoId })
         } finally {
             check(staging.canonicalFile.toPath().startsWith(root.canonicalFile.toPath()))
             staging.deleteRecursively()
@@ -151,6 +151,7 @@ class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
         val contentChanged = draft.category != old.category || draft.address != old.address ||
             draft.addressConfirmed != old.addressConfirmed || draft.description != old.description ||
             draft.eventDate != old.eventDate || draft.issuePosition != old.issuePosition ||
+            draft.photographerReference != old.photographerReference ||
             draft.photoReview != old.photoReview
         val updated = draft.copy(revision = expectedRevision + 1, isSynthetic = old.isSynthetic,
             stage = if (contentChanged) SubmissionStage.DRAFT else draft.stage)

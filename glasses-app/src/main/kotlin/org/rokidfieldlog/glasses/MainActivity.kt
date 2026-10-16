@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var captureButton: Button
     private lateinit var categoryButton: Button
     private lateinit var reviewButton: Button
+    private lateinit var exportButton: Button
     private var managing = false
     private var screenVisible = false
     private var selectedAction = 0
@@ -125,6 +126,7 @@ class MainActivity : ComponentActivity() {
         panel.addView(captureButton)
         panel.addView(categoryButton)
         panel.addView(reviewButton)
+        exportButton = outlineButton("导出采集包 / USB转存") { confirmExport() }; panel.addView(exportButton)
         val parameters = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.CENTER
         }
@@ -325,6 +327,27 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun confirmExport() {
+        if (capturing || managing || recovering) { showStatus("请等待保存和后台检查完成", 3_000); return }
+        handler.removeCallbacks(hidePanel)
+        AlertDialog.Builder(this).setTitle("导出原始采集包？")
+            .setMessage("包含本机已验证的原图及采集记录，尚未打码。将保存到 Download/FieldLog，通过USB复制到手机后用首页‘导入采集包’打开。下载目录中的副本需自行删除。")
+            .setNegativeButton("取消", null).setPositiveButton("生成采集包") { _, _ ->
+                managing = true; showStatus("正在生成采集包…")
+                fileExecutor.execute {
+                    val result = runCatching { store.exportPackage() }
+                    runOnUiThread {
+                        managing = false
+                        if (!isDestroyed && !isFinishing) result.fold({ (name, count) ->
+                            showStatus("已导出 " + count + " 张 · Download/FieldLog")
+                            AlertDialog.Builder(this).setTitle("采集包已生成").setMessage("Download/FieldLog/" + name + "\nUSB复制到手机，在FieldLog首页导入，再点‘用这批照片新建材料’。原图尚未打码，请在手机逐张审阅。")
+                                .setPositiveButton("知道了", null).show()
+                        }, { showStatus(it.message ?: "导出失败，原照片保留") })
+                    }
+                }
+            }.show()
+    }
+
     private fun showDataManagement() {
         AlertDialog.Builder(this).setTitle("项目数据管理")
             .setItems(arrayOf("删除全部项目数据")) { _, _ -> confirmDelete() }
@@ -348,7 +371,7 @@ class MainActivity : ComponentActivity() {
             previousKeyTime = event.eventTime
             if (event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return true
             val action = when {
-                recentPreviousKey == KeyEvent.KEYCODE_DPAD_RIGHT && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> (selectedAction + 1).coerceAtMost(2)
+                recentPreviousKey == KeyEvent.KEYCODE_DPAD_RIGHT && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> (selectedAction + 1).coerceAtMost(3)
                 recentPreviousKey == KeyEvent.KEYCODE_DPAD_LEFT && event.keyCode == KeyEvent.KEYCODE_DPAD_UP -> (selectedAction - 1).coerceAtLeast(0)
                 else -> null
             }
@@ -371,6 +394,7 @@ class MainActivity : ComponentActivity() {
                 when (if (panel.visibility == View.VISIBLE) selectedAction else 0) {
                     1 -> chooseCategory()
                     2 -> reviewLatest()
+                    3 -> confirmExport()
                     else -> capture()
                 }
             }
@@ -430,6 +454,7 @@ class MainActivity : ComponentActivity() {
         captureButton.text = marker(0) + "拍照 / 单指点击"
         categoryButton.text = marker(1) + "问题类型：" + categoryLabel(selectedCategory)
         reviewButton.text = marker(2) + "回看 / 撤销上一张"
+        exportButton.text = marker(3) + "导出采集包 / USB转存"
     }
 
     private fun chooseCategory() {

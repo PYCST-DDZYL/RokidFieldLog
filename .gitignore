@@ -12,6 +12,8 @@ local.properties
 *.log
 *.jks
 *.keystore
+*.p12
+*.pfx
 *.hprof
 exports/
 recordings/

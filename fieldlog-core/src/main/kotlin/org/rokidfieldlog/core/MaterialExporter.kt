@@ -51,6 +51,7 @@ object MaterialExporter {
             append("问题地址：" + draft.address.trim() + "\n")
             append("事发日期（人工确认）：" + draft.eventDate + "\n")
             append("情况说明：\n" + draft.description.trim() + "\n")
+            draft.photographerReference?.let { append(it.label() + "\n") }
             draft.issuePosition?.let { append("人工确认问题坐标：" + it.latitude + ", " + it.longitude + "（" + it.coordinateSystem + "）\n") }
             append("\n附件：" + imageName + "\n")
             append("此材料供人工填写官方表单；请核对当地渠道的分类、附件和文字要求。\n")
@@ -60,6 +61,7 @@ object MaterialExporter {
             "recordId" to draft.photoId, "draftRevision" to draft.revision, "isSynthetic" to draft.isSynthetic,
             "category" to draft.category?.name, "address" to draft.address.trim(), "eventDate" to draft.eventDate,
             "description" to draft.description.trim(), "issuePosition" to draft.issuePosition,
+            "photographerReference" to draft.photographerReference, "photographerReferenceRole" to "PHOTOGRAPHER_REFERENCE_NOT_ISSUE_LOCATION",
             "photoFile" to imageName, "photoSha256" to draft.photoReview!!.outputSha256,
             "profile" to profile.displayName, "submissionMethod" to "USER_SUBMITS_MANUALLY")
         ZipOutputStream(output.buffered()).use { zip ->

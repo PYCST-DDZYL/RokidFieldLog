@@ -115,9 +115,9 @@ class OfflineWorkflowTest {
 
     @Test fun repeatedImportPreservesEditsAndUnknownSourceAnnotations() {
         val bytes = bundle()
-        assertEquals(ImportReport(1, 0), library.importPackage(ByteArrayInputStream(bytes)))
+        assertEquals(ImportReport(1, 0, listOf(id)), library.importPackage(ByteArrayInputStream(bytes)))
         completedDraft(library.load(id))
-        assertEquals(ImportReport(0, 1), library.importPackage(ByteArrayInputStream(bytes)))
+        assertEquals(ImportReport(0, 1, listOf(id)), library.importPackage(ByteArrayInputStream(bytes)))
         assertTrue(library.load(id).draft.addressConfirmed)
         assertTrue(CaptureRecordCodec.encode(library.load(id).source).contains("PRIVATE_SOURCE_SENTINEL"))
     }

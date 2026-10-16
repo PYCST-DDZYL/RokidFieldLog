@@ -21,6 +21,17 @@ class ReportActivity : InspectionScreen() {
     private var restored: ReportDraft? = null
     private var entries = emptyMap<String, LibraryEntry>()
     private var listPage = 0
+    private lateinit var channel: Spinner
+    private lateinit var province: EditText
+    private lateinit var city: EditText
+    private lateinit var district: EditText
+    private lateinit var purpose: EditText
+    private lateinit var contactName: EditText
+    private lateinit var contactPhone: EditText
+    private lateinit var mediaInterview: Spinner
+    private lateinit var noticeAccepted: CheckBox
+    private var photographerReference: PhotographerReference? = null
+    private var checklist: TextView? = null
     private lateinit var recipient: EditText
     private lateinit var category: EditText
     private lateinit var address: EditText
@@ -52,7 +63,10 @@ class ReportActivity : InspectionScreen() {
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { leave() }
         }
-        if (reportId == null && state == null && intent.getBooleanExtra("create", false)) create(intent.getStringExtra("photoId"))
+        if (reportId == null && state == null && intent.getBooleanExtra("create", false)) {
+            val batch = intent.getStringArrayListExtra("photoIds")
+            if (batch != null) createBatch(batch) else create(intent.getStringExtra("photoId"))
+        }
     }
     override fun onResume() {
         super.onResume()
@@ -76,13 +90,13 @@ class ReportActivity : InspectionScreen() {
     private fun refreshList(): Unit = task("正在读取报修材料…", { store.reports.scan() }) { listing ->
         content.removeAllViews(); roles.clear(); draft = null
         content.addView(OfflineUi.text(this, "多图报修材料", 25f))
-        status.text = "每份材料记录同一问题的一次现场观察。先选环境照与细节照，再按接收方要求整理。"
+        status.text = "先在现场写好并确认地址，回来后将照片加进同一份材料；人工提交后再记录回执。"
         if (listing.unreadableCount > 0) status.append("\n有材料无法读取，原文件已保留。")
         content.addView(status)
         content.addView(OfflineUi.button(this, "新建报修材料") { create(null) })
         val pages = (listing.reports.size - 1).coerceAtLeast(0) / 30 + 1
         listPage = listPage.coerceIn(0, pages - 1)
-        if (listing.reports.isEmpty()) content.addView(OfflineUi.text(this, "暂无材料。新建后选择已有照片；不需要重复填写每张照片的地址。"))
+        if (listing.reports.isEmpty()) content.addView(OfflineUi.text(this, "暂无材料。可先在首页定地址，不需要等照片导入。"))
         for (item in listing.reports.drop(listPage * 30).take(30)) {
             val card = OfflineUi.card(this)
             card.addView(OfflineUi.text(this, (if (item.isSynthetic == true) "[合成演示] " else "") + item.address.ifBlank { "地址待填写" }, 20f))
@@ -95,21 +109,67 @@ class ReportActivity : InspectionScreen() {
         if (listPage + 1 < pages) content.addView(OfflineUi.button(this, "下一页") { listPage++; refreshList() })
         content.addView(OfflineUi.button(this, "返回首页") { finish() })
     }
-    private fun create(photoId: String?) = task("正在新建材料…", { store.reports.create(photoId) }) { created ->
+    private fun create(photoId: String?) = task("正在新建材料…", {
+        store.reports.create(photoId)
+    }) { created ->
         reportId = created.reportId; entries = emptyMap(); render(created)
         if (photoId != null) task("正在读取所选照片…", { store.reports.selected(created) }) { entries = it; render(created) }
     }
-    private fun field(hint: String, value: String, limit: Int, multiline: Boolean = false) =
-        OfflineUi.field(this, hint, value, multiline).apply { filters = arrayOf(InputFilter.LengthFilter(limit)); content.addView(this) }
+    private fun createBatch(ids: List<String>) = task("正在用本批照片新建材料…", {
+        val created = store.reports.createBatch(ids)
+        created to store.reports.selected(created)
+    }) { (created, selected) -> reportId = created.reportId; entries = selected; render(created) }
+    private fun field(hint: String, value: String, limit: Int, multiline: Boolean = false): EditText {
+        val counter = OfflineUi.text(this, hint + " · " + value.length + "/" + limit)
+        content.addView(counter)
+        return OfflineUi.field(this, hint, value, multiline).apply {
+            filters = arrayOf(InputFilter.LengthFilter(limit)); content.addView(this)
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { counter.text = hint + " · " + (s?.length ?: 0) + "/" + limit; updateChecklist() }
+                override fun afterTextChanged(s: Editable?) = Unit
+            })
+        }
+    }
+    private fun updateChecklist() {
+        val target = checklist ?: return
+        val reasons = ReportReadiness.reasons(snapshot(), entries)
+        target.text = if (reasons.isEmpty()) "填写检查通过；交接前还会校验照片文件。" else "还需要：\n" + reasons.joinToString("\n") { "• " + it }
+    }
     private fun render(value: ReportDraft) {
+        checklist = null
         draft = value; roles.clear(); content.removeAllViews()
         val thumbnailToken = thumbnails.incrementAndGet()
         val previews = mutableListOf<Pair<File, ImageView>>()
         content.addView(OfflineUi.text(this, (if (value.isSynthetic == true) "[合成演示] " else "") + "多图报修材料", 25f))
-        status.text = "填写一次说明，选入 2–5 张照片。请在离开现场前检查环境照、细节照和位置是否完整。"
+        status.text = "地址先在现场确认，照片回来再补。角色、同一问题和每张照片隐私都由人核对。"
         content.addView(status)
+        content.addView(OfflineUi.text(this, "材料入口"))
+        channel = Spinner(this).apply {
+            adapter = ArrayAdapter(this@ReportActivity, android.R.layout.simple_spinner_dropdown_item, listOf("通用人工交接（不声明渠道兼容）", "江苏12345网页（已核对公开字段）"))
+            setSelection(if (value.channelId == Jiangsu12345.ID) 1 else 0)
+        }; content.addView(channel)
+        content.addView(OfflineUi.text(this, "江苏12345公开字段核对：" + Jiangsu12345.CHECKED_ON + "。登录后个人信息和打码相册接收尚未实测；其他政务渠道未适配。"))
+        content.addView(OfflineUi.button(this, "打开江苏12345填写页") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Jiangsu12345.URL))) }.onFailure { status.text = "没有可用浏览器" } })
+        province = field("省（江苏入口填写江苏省）", value.province, 100)
+        city = field("市（按官方行政区划选项）", value.city, 100)
+        district = field("区 / 县（按官方行政区划选项）", value.district, 100)
+        contactName = field("联系人（交接用，官方个人信息另核对）", value.contactName, 80)
+        contactPhone = field("联系电话（会随材料导出）", value.contactPhone, 32).apply { inputType = android.text.InputType.TYPE_CLASS_PHONE }
+        content.addView(OfflineUi.text(this, "是否接受媒体采访（江苏必选）"))
+        mediaInterview = Spinner(this).apply {
+            adapter = ArrayAdapter(this@ReportActivity, android.R.layout.simple_spinner_dropdown_item, listOf("请选择", "是", "否"))
+            setSelection(when (value.mediaInterview) { true -> 1; false -> 2; null -> 0 })
+        }; content.addView(mediaInterview)
+        content.addView(OfflineUi.text(this, Jiangsu12345.NOTICE))
+        content.addView(OfflineUi.button(this, "阅读江苏12345官方填报须知") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Jiangsu12345.NOTICE_URL))) }.onFailure { status.text = "没有可用浏览器" } })
+        noticeAccepted = CheckBox(this).apply { text = "我已阅读官方须知及上述联系方式与个人信息告知"; isChecked = value.noticeAccepted }; content.addView(noticeAccepted)
+        content.addView(OfflineUi.text(this, "不预先承诺接收方接受打码相册照片；首次实际提交后，在回执与试交记录里记下结果。"))
+        photographerReference = value.photographerReference
+        ReferenceLocationPicker.add(this, content, photographerReference) { photographerReference = it; updateChecklist() }
         recipient = field("实际接收人或渠道，如园区维修负责人", value.recipient, 120)
         category = field("接收方的问题分类，请按其实际选项填写", value.category, 120)
+        purpose = field("诉求目的", value.purpose, 100, true)
         address = field("问题详细地址", value.address, 200)
         landmark = field("附近参照物或设施编号，如东门内第二盏路灯旁", value.landmark, 200)
         locationConfirmed = CheckBox(this).apply { text = "我已确认接收方能据此找到问题位置"; isChecked = value.locationConfirmed }
@@ -118,15 +178,15 @@ class ReportActivity : InspectionScreen() {
         date = OfflineUi.button(this, "本次现场日期：" + eventDate.ifBlank { "待人工确认" }) {
             val initial = runCatching { LocalDate.parse(eventDate) }.getOrElse { LocalDate.now() }
             DatePickerDialog(this, { _, year, month, day ->
-                eventDate = LocalDate.of(year, month + 1, day).toString(); date.text = "本次现场日期：" + eventDate; sameVisit.isChecked = false
+                eventDate = LocalDate.of(year, month + 1, day).toString(); date.text = "本次现场日期：" + eventDate; sameVisit.isChecked = false; updateChecklist()
             }, initial.year, initial.monthValue - 1, initial.dayOfMonth).show()
         }; content.addView(date)
-        description = field("具体哪里损坏、影响什么、希望如何处理", value.description, 2000, true)
+        description = field("正文：具体哪里损坏、影响什么、希望如何处理", value.description, 2000, true)
         sameVisit = CheckBox(this).apply {
             text = "我已逐张核对：属于同一问题、同一次现场观察，且视角清晰可用"
             isChecked = value.sameIssueVisitConfirmed
         }
-        content.addView(OfflineUi.text(this, "照片（应用最多 5 张，每张导出副本不超过 5 MB；请另核对接收方限制）", 19f))
+        content.addView(OfflineUi.text(this, "照片：应用每张导出JPG最多5 MB、长边2048像素；江苏网页单个附件10 MB、最多5个。ZIP须先解压。", 19f))
         for ((index, photo) in value.photos.withIndex()) {
             val entry = entries[photo.photoId]
             val card = OfflineUi.card(this)
@@ -147,6 +207,7 @@ class ReportActivity : InspectionScreen() {
                 override fun onNothingSelected(parent: AdapterView<*>?) = Unit
                 override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
                     if (position != photo.role.ordinal) sameVisit.isChecked = false
+                    updateChecklist()
                 }
             }
             card.addView(OfflineUi.button(this, "查看照片 / 隐私审阅") {
@@ -164,12 +225,28 @@ class ReportActivity : InspectionScreen() {
         content.addView(sameVisit)
         for (input in listOf(address, landmark)) input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { locationConfirmed.isChecked = false }
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { locationConfirmed.isChecked = false; sameVisit.isChecked = false }
             override fun afterTextChanged(s: Editable?) = Unit
         })
-        val reasons = ReportReadiness.reasons(value, entries)
-        content.addView(OfflineUi.text(this, if (reasons.isEmpty()) "填写检查通过；保存材料前还会校验照片文件。" else "还需要：\n" + reasons.joinToString("\n") { "• " + it }))
+        checklist = OfflineUi.text(this, "").also { content.addView(it) }
+        for (check in listOf(locationConfirmed, sameVisit, noticeAccepted)) check.setOnCheckedChangeListener { _, _ -> updateChecklist() }
+        for (spinner in listOf(channel, mediaInterview)) spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) { updateChecklist() }
+        }
+        updateChecklist()
         content.addView(OfflineUi.button(this, "保存草稿并检查缺项") { save { render(it) } })
+        content.addView(OfflineUi.button(this, "返回现场地址核对") {
+            save { saved -> startActivity(Intent(this, OnSiteActivity::class.java).putExtra("reportId", saved.reportId)) }
+        })
+        content.addView(OfflineUi.text(this, "按填写顺序逐段复制", 20f))
+        for ((label, part) in listOf("1. 复制诉求目的" to ReportTextPart.PURPOSE, "2. 复制详细地址（含参照物）" to ReportTextPart.ADDRESS, "3. 复制正文" to ReportTextPart.BODY)) {
+            content.addView(OfflineUi.button(this, label) {
+                save { saved -> task("正在核对材料…", { store.reports.submissionPart(saved.reportId, part) }) { text ->
+                    MaterialSharing.copyText(this, text); status.text = "已复制。请在实际渠道粘贴对应字段。"
+                } }
+            })
+        }
         content.addView(OfflineUi.button(this, "分享已审阅照片和说明") {
             save { saved ->
                 task("正在校验并准备分享照片…", { store.reports.prepareShare(saved.reportId, store.shares) },
@@ -198,8 +275,11 @@ class ReportActivity : InspectionScreen() {
             }
         })
         content.addView(OfflineUi.text(this, "保存后解压，将文字和 JPG 填入接收方现有渠道。请核对当地分类、附件和联系信息要求。"))
+        content.addView(OfflineUi.button(this, "回执与试交记录（补充要求 / 退图 / 耗时）") {
+            save { saved -> startActivity(Intent(this, ReportHandoffActivity::class.java).putExtra("reportId", saved.reportId)) }
+        })
         content.addView(OfflineUi.button(this, "删除这份材料草稿") {
-            AlertDialog.Builder(this).setTitle("删除这份材料草稿？").setMessage("照片及问题历史继续保留，已保存到自选位置的文件由你管理。")
+            AlertDialog.Builder(this).setTitle("删除这份材料及私人回执记录？").setMessage("这份材料里的地址、回执、退图及耗时记录会一并删除。照片及独立的问题历史继续保留，已保存到自选位置的文件由你管理。")
                 .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ ->
                     val current = draft ?: return@setPositiveButton
                     task("正在删除材料草稿…", { store.reports.delete(current.reportId, current.revision) }) { finish() }
@@ -209,6 +289,11 @@ class ReportActivity : InspectionScreen() {
         loadThumbnails(previews, thumbnails, thumbnailToken)
     }
     private fun snapshot(): ReportDraft = checkNotNull(draft).copy(
+        channelId = if (channel.selectedItemPosition == 1) Jiangsu12345.ID else "GENERIC_MANUAL",
+        province = province.text.toString().trim(), city = city.text.toString().trim(), district = district.text.toString().trim(),
+        purpose = purpose.text.toString().trim(), contactName = contactName.text.toString().trim(), contactPhone = contactPhone.text.toString().trim(),
+        mediaInterview = when (mediaInterview.selectedItemPosition) { 1 -> true; 2 -> false; else -> null },
+        noticeAccepted = noticeAccepted.isChecked, albumAcceptanceConfirmed = false, photographerReference = photographerReference,
         recipient = recipient.text.toString().trim(), category = category.text.toString().trim(), address = address.text.toString().trim(),
         landmark = landmark.text.toString().trim(), description = description.text.toString().trim(), eventDate = eventDate,
         locationConfirmed = locationConfirmed.isChecked, sameIssueVisitConfirmed = sameVisit.isChecked,

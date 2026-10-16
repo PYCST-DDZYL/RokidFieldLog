@@ -18,6 +18,8 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/reviewed_share_paths" />
         </provider>
+        <activity android:name=".OnSiteActivity" android:enableOnBackInvokedCallback="true" android:exported="false" />
+        <activity android:name=".ReportHandoffActivity" android:enableOnBackInvokedCallback="true" android:exported="false" />
         <activity android:name=".ReportActivity" android:enableOnBackInvokedCallback="true" android:exported="false" />
         <activity android:name=".InspectionActivity" android:exported="false" />
         <activity android:name=".InspectionLinkActivity" android:exported="false" />

@@ -38,7 +38,8 @@ class PhotoImportTest {
 
     @Test fun realIntakeKeepsUnknownCaptureFactsAndRequiresPrivacyReview() {
         val bytes = jpeg()
-        assertEquals(ImportReport(1, 0), library.importPhotos(selected(bytes)))
+        val imported = library.importPhotos(selected(bytes))
+        assertEquals(ImportReport(1, 0, listOf(library.list().single().draft.photoId)), imported)
         val entry = library.list().single()
         val record = entry.source.record
         assertEquals("UNKNOWN_SELECTED_PHOTO", record.captureTimeSource)
@@ -58,14 +59,16 @@ class PhotoImportTest {
         library.importPhotos(selected(bytes))
         val first = library.list().single()
         val edited = library.save(first.draft.copy(address = "Synthetic fixture site", description = "Synthetic retained edit"), 0)
-        assertEquals(ImportReport(0, 1), library.importPhotos(selected(bytes)))
+        assertEquals(ImportReport(0, 1, listOf(first.draft.photoId)), library.importPhotos(selected(bytes)))
         assertEquals(edited.draft, library.list().single().draft)
         assertNoStaging()
     }
 
     @Test fun samePhotoTwiceInOneSelectionIsCountedAsADuplicate() {
         val bytes = jpeg()
-        assertEquals(ImportReport(2, 1), library.importPhotos(selected(bytes, bytes, jpeg(Color.BLUE))))
+        val imported = library.importPhotos(selected(bytes, bytes, jpeg(Color.BLUE)))
+        assertEquals(2, imported.added); assertEquals(1, imported.duplicates)
+        assertEquals(library.list().map { it.draft.photoId }.toSet(), imported.photoIds.toSet())
         assertEquals(2, library.list().size); assertNoStaging()
     }
 

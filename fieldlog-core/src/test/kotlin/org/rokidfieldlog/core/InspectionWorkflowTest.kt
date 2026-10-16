@@ -60,7 +60,7 @@ class InspectionWorkflowTest {
         })
         val captures = (0..2).map(::capture)
         val bytes = ByteArrayOutputStream().also { CapturePackage.write(it, captures, isSynthetic = true) }.toByteArray()
-        assertEquals(ImportReport(3, 0), library.importPackage(ByteArrayInputStream(bytes)))
+        assertEquals(ImportReport(3, 0, captures.map { it.document.record.photoId }), library.importPackage(ByteArrayInputStream(bytes)))
         val ids = captures.map { it.document.record.photoId }
         val first = inspections.create("合成园区 / 步行道 07", IssueCategory.ROAD_DAMAGE, ids[0], "2020-01-01", true, "合成演示：首次观察到路面破损")
         val claim = inspections.repairClaim(first.issueId, first.revision, "合成演示：维修方反馈已完成，尚未现场核对")

@@ -215,6 +215,27 @@ class CaptureRepository(
         } }.maxByOrNull { (_, capture) -> capture.file.lastModified() }?.second
     }
 
+    /** Snapshot is held against capture/delete/recovery while the original archive is written. */
+    fun writePackage(output: java.io.OutputStream): Int = state.lifecycle.write {
+        check(state.active.isEmpty()) { "请等待照片保存后再导出" }
+        val captures = records.ids().sorted().mapNotNull { id ->
+            val document = records.read(id)?.let(CaptureRecordCodec::decode) ?: return@mapNotNull null
+            val record = document.record
+            if (record.captureState !in setOf(CaptureState.SAVED, CaptureState.RECOVERED) || record.photoIntegrityStatus != PhotoIntegrity.VERIFIED) return@mapNotNull null
+            require(record.photoId == id && record.photoFile == "photos/$id.jpg") { "记录路径异常，原文件保留" }
+            val photo = files.completed(id)
+            require(photo.isFile && CaptureFiles.hasJpegMarkers(photo)) { "照片不完整，未导出" }
+            require(images.dimensions(photo) == (record.width to record.height)) { "照片尺寸变化，未导出" }
+            val hash = PhotoDigest.sha256(photo)
+            require(record.photoSha256 == null || record.photoSha256.equals(hash, true)) { "照片指纹变化，未导出" }
+            IncomingCapture(document, photo, hash)
+        }
+        require(captures.isNotEmpty()) { "暂无可导出的已验证照片" }
+        require(captures.size <= CapturePackage.MAX_RECORDS) { "采集包最多100张，请先分批转存" }
+        CapturePackage.write(output, captures)
+        captures.size
+    }
+
     /** Caller selects the ID shown in the review dialog, so a later shot cannot change the target. */
     fun deleteCapture(id: String) = withId(id) {
         check(id !in state.active) { "Capture is still saving" }

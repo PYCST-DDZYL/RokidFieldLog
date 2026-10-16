@@ -40,6 +40,31 @@ class CaptureRepositoryTest {
         return stamp
     }
 
+    @Test fun glassesSnapshotUsesThePhonePackageReaderAndDetectsChangedOriginals() {
+        val image = java.awt.image.BufferedImage(32, 24, java.awt.image.BufferedImage.TYPE_INT_RGB)
+        val decoder = ImageInspector { file -> runCatching { javax.imageio.ImageIO.read(file)?.let { it.width to it.height } }.getOrNull() }
+        val repo = repository(images = decoder)
+        val stamp = stamp()
+        val pending = repo.begin(stamp)
+        check(javax.imageio.ImageIO.write(image, "jpg", pending))
+        repo.finish(stamp, pending, IssueCategory.LITTER)
+        val bytes = java.io.ByteArrayOutputStream()
+        assertEquals(1, repo.writePackage(bytes))
+        val incoming = CapturePackage.read(java.io.ByteArrayInputStream(bytes.toByteArray()), temporary.newFolder("incoming"), decoder)
+        assertEquals(stamp.photoId, incoming.captures.single().document.record.photoId)
+        assertArrayEquals(photo(stamp.photoId).readBytes(), incoming.captures.single().photo.readBytes())
+        val library = OfflineLibrary(temporary.newFolder("phone"), object : AtomicTextFiles {
+            override fun read(file: File) = file.readText()
+            override fun write(file: File, text: String) { file.parentFile.mkdirs(); file.writeText(text) }
+        }, decoder, clock)
+        val imported = library.importPackage(java.io.ByteArrayInputStream(bytes.toByteArray()))
+        assertEquals(listOf(stamp.photoId), imported.photoIds)
+        assertEquals(imported.photoIds, library.importPackage(java.io.ByteArrayInputStream(bytes.toByteArray())).photoIds)
+        assertNull(library.load(stamp.photoId).draft.photoReview)
+        photo(stamp.photoId).appendBytes(byteArrayOf(0))
+        assertThrows(IllegalArgumentException::class.java) { repo.writePackage(java.io.ByteArrayOutputStream()) }
+    }
+
     @Test fun unchangedColdStartSkipsDecodeAndDoesNotRewriteRecord() {
         val saved = save()
         val original = storage.read(saved.photoId)
