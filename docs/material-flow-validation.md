@@ -16,11 +16,11 @@
 | 密钥持续性 | 重复初始化前后PKCS12字节不变；错误debug密钥被verifyReleaseKey拒绝。私钥和密码仅保存在忽略的.private目录，未上传 |
 | 远端CI | 已有使用同一密钥的手动发布工作流；未配置远端Secrets、未执行或发布远端版本 |
 
-测试与首次构建日志：.local/onsite-build.log。最终构建日志：.local/onsite-final-build.log，以及手机最后修正后的.local/onsite-phone-final-build.log。测试报告：fieldlog-core/build/reports/tests/test/。最终构建在最后的后台保存和确认失效调整后重新完成；核心逻辑测试未冒充Android生命周期测试。
+测试与首次构建日志：.local/onsite-build.log。最终构建日志：.local/onsite-final-build.log，以及手机最后修正后的.local/onsite-publish-build.log（完成标记exitCode=0）。测试报告：fieldlog-core/build/reports/tests/test/。最终构建在最后的后台保存和确认失效调整后重新完成；核心逻辑测试未冒充Android生命周期测试。
 
 | 发布文件 | 版本 | SHA-256 |
 | --- | --- | --- |
-| phone-app/build/outputs/apk/release/phone-app-release.apk | 0.7.0-onsite-address / code 8 | 最终构建后补充 |
+| phone-app/build/outputs/apk/release/phone-app-release.apk | 0.7.0-onsite-address / code 8 | d79e8361b2a0f57959b674aa62ac27d861f9e070aae1b7ed13f8e4ba2887ec6f |
 | glasses-app/build/outputs/apk/release/glasses-app-release.apk | 0.2.0-package-export / code 3 | d8b782df4b958b7fcbbedc2d5aeffe643aae236c4ce3fa060b49fcc73635877e |
 
 两端最终APK均通过v2签名校验。发布证书SHA-256：8fc71c5d65b036317565fe78d950b1562976dbec3dfe09d4b98d8dce09506674。须另行安全备份同一密钥，不能靠重建新密钥替换。
@@ -28,8 +28,8 @@
 ## 真实设备完成的部分
 
 - 标准adb.exe受当前工具进程的Windows用户目录异常影响，启动报Cannot mkdir。后经SDK官方AdbWinApi.dll使用现有电脑ADB密钥正常认证，确认连接Samsung SM-S9480（Android16 / API36，有GMS）和Rokid RG-glasses（Android12 / API32）。未修改系统驱动、注册表或用户目录，未绕过设备授权。
-- 手机先安装固定签名code7，再将最终code8 APK传输到设备，设备SHA-256与本机一致，pm install -r返回Success，前后包UID相同。MainActivity启动Status ok。未卸载、未清空应用数据。尚未通过UI核对手机旧材料内容保留。
-- 手机最初处于安全锁屏，后来正常解锁。已在最终新版首页进入“现场先定地址”，无照片即可创建材料；点空地址确认时显示缺项阻拦。系统定位弹窗选择精确位置、仅限这一次，随后取得真实FUSED/fused定位和系统文字地址建议，建议进入地址框，参考坐标明确标注非问题位置。参照物未补齐，按“暂存待确认”离开；测试没有确认对方能找到，也没有虚构现场问题。地址建议保存/重新打开另外核对。此项是有GMS手机上的一次Fused定位，不等于已验收独立卫星GPS或无GMS定位。
+- 手机先安装固定签名code7，再将最终code8 APK传输到设备，设备SHA-256与本机一致，pm install -r返回Success，前后包UID相同。MainActivity启动Status ok。未卸载、未清空应用数据。本次无照片现场草稿已在覆盖后重新打开，地址文本及参考位置逐字一致；参照物为空时确认未勾选，暂存后首页显示“继续定地址”。旧照片库和独立问题历史的升级保留仍未做UI验收。
+- 手机最初处于安全锁屏，后来正常解锁。已在最终新版首页进入“现场先定地址”，无照片即可创建材料；点空地址确认时显示缺项阻拦。系统定位弹窗选择精确位置、仅限这一次，随后取得真实FUSED/fused定位和系统文字地址建议，建议进入地址框，参考坐标明确标注非问题位置。参照物未补齐，按“暂存待确认”离开；测试没有确认对方能找到，也没有虚构现场问题。地址建议保存并覆盖升级后重新打开，文本及参考位置均一致。精度估计约15.7米；未公开实际地址或坐标。此项是有GMS手机上的一次Fused定位，不等于已验收独立卫星GPS或无GMS定位。
 - 眼镜原装debug code1。升级前备份项目私有文件53,024,256字节，181个文件全部与逐文件SHA-256核对一致，包含7张原照片。备份和原图仅在忽略的.local/device/material-flow目录。
 - 本机留存的旧debug私钥与眼镜已安装证书相符。用它授权固定发布密钥进行系统支持的v3签名轮换，迁移覆盖安装Success，随后普通固定签名code3发布APK再次覆盖Success，包UID均保持。没有卸载或清空图库。眼镜恢复提示restored=0、incomplete=1、errors=0；那1条未完成记录没有记成通过。
 - 眼镜也已普通覆盖安装表中最终APK，Success且UID相同。眼镜唤醒后可从UI树读到7张照片及第四项“导出采集包 / USB转存”；本轮ADB触点/方向键未成功选中导出。未发送可能误触拍照的确认键。没有证明真实触控板、光学显示或实物导出转存完成。
