@@ -9,9 +9,12 @@ object MaterialDocumentCopy {
         validate()
         var started = false
         try {
-            openOutput().use { output ->
-                started = true
-                openInput().use { it.copyTo(output) }
+            // Acquire the readable source before a provider can create/truncate the destination.
+            openInput().use { input ->
+                openOutput().use { output ->
+                    started = true
+                    input.copyTo(output)
+                }
             }
         } catch (error: Exception) {
             if (started) runCatching(deletePartial)

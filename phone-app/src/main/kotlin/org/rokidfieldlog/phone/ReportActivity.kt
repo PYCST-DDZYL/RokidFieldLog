@@ -71,20 +71,25 @@ class ReportActivity : InspectionScreen() {
     override fun onResume() {
         super.onResume()
         if (isFinishing || busy) return
-        if (reportId == null) refreshList() else {
-            val editing = restored ?: draft?.let { runCatching { snapshot() }.getOrNull() }
-            restored = null
-            task("正在读取报修材料…", {
-                val saved = store.reports.load(reportId!!)
-                saved to store.reports.selected(saved)
-            }) { (saved, selected) ->
-                val photosChanged = entries.isNotEmpty() && saved.photos.any { photo ->
-                    entries[photo.photoId]?.draft?.photoReview != selected[photo.photoId]?.draft?.photoReview
-                }
-                entries = selected
-                val shown = editing?.takeIf { it.revision == saved.revision } ?: saved
-                render(if (photosChanged) shown.copy(sameIssueVisitConfirmed = false) else shown)
+        if (reportId == null) refreshList() else loadReport()
+    }
+    private fun loadReport(messageAfterLoad: String? = null) {
+        val id = reportId ?: return
+        val editing = restored ?: draft?.let { runCatching { snapshot() }.getOrNull() }
+        // Keep restored edits available if another rotation interrupts this read.
+        restored = editing
+        task("正在读取报修材料…", {
+            val saved = store.reports.load(id)
+            saved to store.reports.selected(saved)
+        }) { (saved, selected) ->
+            val photosChanged = entries.isNotEmpty() && saved.photos.any { photo ->
+                entries[photo.photoId]?.draft?.photoReview != selected[photo.photoId]?.draft?.photoReview
             }
+            entries = selected
+            val shown = editing?.takeIf { it.revision == saved.revision } ?: saved
+            render(if (photosChanged) shown.copy(sameIssueVisitConfirmed = false) else shown)
+            restored = null
+            messageAfterLoad?.let { status.text = it }
         }
     }
     private fun refreshList(): Unit = task("正在读取报修材料…", { store.reports.scan() }) { listing ->
@@ -413,18 +418,27 @@ class ReportActivity : InspectionScreen() {
         val uri = data?.data
         if (resultCode != RESULT_OK || uri == null) { PrivateProbeStore.fileExecutor.execute { store.reports.discard(prepared) }; status.text = "已取消材料保存"; return }
         task("正在保存到你选择的位置…", {
-            try {
-                MaterialDocumentCopy.copy(
-                    validate = { store.reports.validatePrepared(prepared) },
-                    openInput = { prepared.file.inputStream() },
-                    openOutput = { checkNotNull(contentResolver.openOutputStream(uri, "w")) },
-                    deletePartial = { DocumentsContract.deleteDocument(contentResolver, uri) })
-            } finally { store.reports.discard(prepared) }
-        }) { status.text = "材料已保存。解压后将文字和照片填入接收方渠道；请自行确认受理情况。" }
+            runCatching {
+                try {
+                    MaterialDocumentCopy.copy(
+                        validate = { store.reports.validatePrepared(prepared) },
+                        openInput = { prepared.file.inputStream() },
+                        openOutput = { checkNotNull(contentResolver.openOutputStream(uri, "w")) },
+                        deletePartial = { DocumentsContract.deleteDocument(contentResolver, uri) })
+                } finally { store.reports.discard(prepared) }
+            }
+        }) { result ->
+            val message = result.fold(
+                { "材料已保存。解压后将文字和照片填入接收方渠道；请自行确认受理情况。" }, OfflineUi::error)
+            // onActivityResult precedes onResume. A recreated screen may have
+            // skipped loading while this write was busy, on either success or failure.
+            if (draft == null) loadReport(message) else status.text = message
+        }
     }
     override fun onSaveInstanceState(out: Bundle) {
         reportId?.let { out.putString("reportId", it) }
-        if (draft != null && ::recipient.isInitialized) runCatching { ReportCodec.encode(snapshot()) }.getOrNull()?.let { out.putString("editing", it) }
+        val editing = if (draft != null && ::recipient.isInitialized) runCatching { snapshot() }.getOrNull() else restored
+        editing?.let { runCatching { ReportCodec.encode(it) }.getOrNull() }?.let { out.putString("editing", it) }
         pending?.let { prepared ->
             out.putString("exportName", prepared.file.name); out.putString("exportHash", prepared.sha256); out.putLong("exportRevision", prepared.revision)
             out.putStringArray("exportPhotoIds", prepared.photoRevisions.keys.toTypedArray()); out.putLongArray("exportPhotoRevisions", prepared.photoRevisions.values.toLongArray())
