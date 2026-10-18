@@ -129,7 +129,7 @@ class LocationActivity : Activity() {
 
     private fun showResult(data: JSONObject, historical: Boolean) {
         val prefix = if (historical) "上次测试的历史记录（不是当前位置）\n\n" else "本次测试结果\n\n"
-        val observation = data.optJSONObject("location")
+        val observation = data.optJSONObject("location")?.takeIf { store.reference(data) != null }
         val body = if (observation != null) {
             buildString {
                 append("定位成功 · 拍摄者位置测试\n")
@@ -150,7 +150,7 @@ class LocationActivity : Activity() {
                 append("精度是估计值；该结果可能融合 GPS、Wi-Fi 或移动网络。")
             }
         } else {
-            val reason = when (data.optString("reason")) {
+            val reason = if (data.optString("status") == "SUCCESS") "定位记录不完整或数据异常，未采用。请重新测试定位。" else when (data.optString("reason")) {
                 "PERMISSION_DENIED" -> "定位权限未授予。可再次点击测试申请权限。"
                 "LOCATION_DISABLED" -> "手机定位未开启。App 不会自动修改定位设置。"
                 "NO_ENABLED_PROVIDER" -> "没有可用的定位提供者；仅近似权限时，部分手机无法使用卫星定位。"

@@ -65,6 +65,11 @@ data class MaterialProfile(
 }
 
 object DraftCodec {
+    private val fields = setOf("schemaVersion", "photoId", "revision", "category", "address", "addressConfirmed",
+        "description", "eventDate", "issuePosition", "photographerReference", "photoReview", "stage", "receipt", "isSynthetic")
+    private val reviewFields = setOf("fileName", "originalSha256", "outputSha256", "byteCount", "width", "height",
+        "masks", "noThirdPartyInformation", "reviewedAtUtcMillis", "rendererVersion")
+    private val maskFields = setOf("left", "top", "right", "bottom")
     private val gson = GsonBuilder().serializeNulls().setPrettyPrinting().disableJdkUnsafe().setStrictness(Strictness.STRICT)
         .registerTypeAdapter(GeoPoint::class.java, InstanceCreator<GeoPoint> { GeoPoint(0.0, 0.0) })
         .registerTypeAdapter(IssueCategory::class.java, JsonDeserializer { value, _, _ -> IssueCategory.valueOf(value.asString) })
@@ -74,11 +79,17 @@ object DraftCodec {
     fun encode(draft: IssueDraft): String = gson.toJson(draft)
     fun decode(text: String, expectedId: String): IssueDraft {
         val tree = gson.fromJson(text, JsonObject::class.java) ?: error("Missing draft")
+        require(tree.keySet().all { it in fields }) { "草稿含未知字段，原文件保留" }
+        strings(tree, "photoId", "address", "description", "eventDate", "stage", "receipt")
+        booleans(tree, "addressConfirmed", "isSynthetic")
+        integer(tree["revision"])
         val version = tree["schemaVersion"]
         require(version != null && version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.toString() == "1") {
             "Unsupported draft schema"
         }
         tree["issuePosition"]?.takeUnless { it.isJsonNull }?.asJsonObject?.let { point ->
+            require(point.keySet().all { it in setOf("latitude", "longitude", "coordinateSystem") }) { "问题坐标含未知字段，原文件保留" }
+            strings(point, "coordinateSystem")
             for (axis in listOf("latitude", "longitude")) {
                 val value = point[axis]
                 require(value != null && value.isJsonPrimitive && value.asJsonPrimitive.isNumber) { "Missing numeric coordinate" }
@@ -86,6 +97,25 @@ object DraftCodec {
             require(point.has("coordinateSystem"))
         }
         PhotographerReferenceJson.validate(tree["photographerReference"])
+        tree["photoReview"]?.takeUnless { it.isJsonNull }?.let { value ->
+            require(value.isJsonObject) { "照片审阅数据异常" }
+            val review = value.asJsonObject
+            require(review.keySet().all { it in reviewFields }) { "照片审阅含未知字段，原文件保留" }
+            strings(review, "fileName", "originalSha256", "outputSha256", "rendererVersion")
+            booleans(review, "noThirdPartyInformation")
+            for (key in listOf("byteCount", "reviewedAtUtcMillis")) integer(review[key])
+            for (key in listOf("width", "height")) integer(review[key], Int.MAX_VALUE.toLong())
+            review["masks"]?.let { masks ->
+                require(masks.isJsonArray && masks.asJsonArray.size() <= 100) { "照片遮挡数据异常" }
+                for (mask in masks.asJsonArray) {
+                    require(mask.isJsonObject && mask.asJsonObject.keySet() == maskFields) { "遮挡框必须明确提供四个边界" }
+                    for (key in maskFields) {
+                        val coordinate = mask.asJsonObject[key]
+                        require(coordinate.isJsonPrimitive && coordinate.asJsonPrimitive.isNumber) { "遮挡框边界必须是数值" }
+                    }
+                }
+            }
+        }
         val draft = gson.fromJson(tree, IssueDraft::class.java) ?: error("Missing draft")
         require(draft.schemaVersion == 1 && draft.photoId == expectedId && CaptureFiles.validId(expectedId))
         require(draft.revision >= 0)
@@ -104,6 +134,18 @@ object DraftCodec {
             review.masks.forEach { it.validate() }
         }
         return draft
+    }
+
+    private fun strings(tree: JsonObject, vararg keys: String) {
+        for (key in keys) tree[key]?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) { "草稿文字字段类型异常：$key" } }
+    }
+    private fun booleans(tree: JsonObject, vararg keys: String) {
+        for (key in keys) tree[key]?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) { "确认字段必须明确为布尔值：$key" } }
+    }
+    private fun integer(value: JsonElement?, maximum: Long = Long.MAX_VALUE) {
+        if (value == null) return // Legacy drafts may omit a field whose safe default is zero.
+        require(value.isJsonPrimitive && value.asJsonPrimitive.isNumber && value.toString().matches(Regex("[0-9]+")) &&
+            value.toString().toLongOrNull()?.let { it <= maximum } == true) { "草稿整数记录异常" }
     }
 }
 

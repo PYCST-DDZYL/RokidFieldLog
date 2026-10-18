@@ -128,6 +128,41 @@ object CaptureRecordCodec {
 
     fun encodeProbe(record: LocationProbeRecord): String = gson.toJson(record)
 
+    /** Read an explicitly selected historical result, without claiming it is a current fix. */
+    fun referenceFromProbe(text: String, selectedAtUtcMillis: Long): PhotographerReference? = runCatching {
+        require(text.toByteArray(Charsets.UTF_8).size <= 256 * 1024)
+        val original = parse(text)
+        requireVersion(original)
+        require(original["status"] == JsonPrimitive("SUCCESS"))
+        val permission = original["permissionLevel"]
+        require(permission != null && permission.isJsonPrimitive && permission.asJsonPrimitive.isString &&
+            permission.asString in setOf("PRECISE", "APPROXIMATE"))
+        val source = original["source"]
+        require(source != null && source.isJsonPrimitive && source.asJsonPrimitive.isString &&
+            source.asString in setOf("FUSED", "ANDROID_SYSTEM"))
+        val location = original["location"]
+        require(location != null && location.isJsonObject)
+        val fix = location.asJsonObject
+        require(fix["isMock"] == JsonPrimitive(false)) { "Mock status must be explicitly false" }
+        val age = fix["ageAtReceiptMillis"]
+        require(age != null && age.isJsonPrimitive && age.asJsonPrimitive.isNumber && age.toString().matches(Regex("[0-9]+")))
+        require(age.toString().toLongOrNull()?.let { it in 0..LocationQuality.MAX_AGE_MILLIS } == true)
+        val completed = original["receivedAtUtcMillis"]
+        require(completed != null && completed.isJsonPrimitive && completed.asJsonPrimitive.isNumber &&
+            completed.toString().matches(Regex("[1-9][0-9]*")) && completed.toString().toLongOrNull() != null)
+        val provider = fix["provider"]
+        require(provider == null || provider.isJsonPrimitive && provider.asJsonPrimitive.isString)
+        val reference = JsonObject().apply {
+            for (key in listOf("latitude", "longitude", "coordinateSystem", "accuracyMeters", "locationTimeUtcMillis")) {
+                fix[key]?.let { add(key, it) }
+            }
+            addProperty("selectedAtUtcMillis", selectedAtUtcMillis)
+            addProperty("source", source.asString + "/" + (provider?.asString ?: "unknown"))
+        }
+        PhotographerReferenceJson.validate(reference)
+        gson.fromJson(reference, PhotographerReference::class.java).also { it.validate() }
+    }.getOrNull()
+
     private fun parse(text: String): JsonObject = gson.fromJson(text, JsonObject::class.java)
         ?: throw IllegalArgumentException("Missing JSON object")
 

@@ -5,6 +5,7 @@ import android.util.AtomicFile
 import org.json.JSONObject
 import java.io.File
 import org.rokidfieldlog.core.PhotographerReference
+import org.rokidfieldlog.core.CaptureRecordCodec
 import java.util.concurrent.Executors
 
 class PrivateProbeStore(context: Context) {
@@ -43,15 +44,8 @@ class PrivateProbeStore(context: Context) {
         }
     } catch (exception: Exception) { null }
 
-    fun reference(data: JSONObject): PhotographerReference? = runCatching {
-        require(data.getString("status") == "SUCCESS")
-        val fix = data.getJSONObject("location")
-        require(!fix.optBoolean("isMock", false) && fix.getString("coordinateSystem") == "WGS84")
-        PhotographerReference(fix.getDouble("latitude"), fix.getDouble("longitude"),
-            accuracyMeters = if (fix.isNull("accuracyMeters")) null else fix.getDouble("accuracyMeters").toFloat(),
-            locationTimeUtcMillis = fix.getLong("locationTimeUtcMillis"), selectedAtUtcMillis = System.currentTimeMillis(),
-            source = data.getString("source") + "/" + fix.optString("provider", "unknown")).also { it.validate() }
-    }.getOrNull()
+    fun reference(data: JSONObject): PhotographerReference? =
+        CaptureRecordCodec.referenceFromProbe(data.toString(), System.currentTimeMillis())
 
     fun lastReference(): PhotographerReference? {
         val saved = runCatching { AtomicFile(File(root, "last-successful-probe.json")).openRead().use { input ->

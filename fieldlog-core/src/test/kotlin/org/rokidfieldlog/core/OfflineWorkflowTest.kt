@@ -348,4 +348,34 @@ class OfflineWorkflowTest {
         assertThrows(IllegalArgumentException::class.java) { MaskRect(Float.NaN, 0f, 1f, 1f).validate() }
         assertThrows(IllegalArgumentException::class.java) { MaskRect(0.8f, 0f, 0.2f, 1f).validate() }
     }
+
+    @Test fun stringPrivacyApprovalCannotUnlockMaterialExportAndOriginalsStayIntact() {
+        val entry = reviewed(completedDraft(imported()))
+        val file = File(entry.directory, "draft.json")
+        val tree = com.google.gson.JsonParser.parseString(file.readText()).asJsonObject
+        val review = tree.getAsJsonObject("photoReview")
+        review.add("masks", com.google.gson.JsonArray())
+        review.addProperty("noThirdPartyInformation", "true")
+        val broken = tree.toString().toByteArray(Charsets.UTF_8)
+        file.writeBytes(broken)
+
+        assertThrows(IllegalArgumentException::class.java) { library.prepareMaterial(id) }
+        assertArrayEquals(broken, file.readBytes())
+        assertEquals(entry.importedSha256, PhotoDigest.sha256(entry.original))
+        assertTrue(entry.reviewFile(entry.draft.photoReview!!.fileName).isFile)
+    }
+
+    @Test fun futureDraftAnnotationsArePreservedInsteadOfLostByOlderEditor() {
+        val entry = imported()
+        val file = File(entry.directory, "draft.json")
+        val tree = com.google.gson.JsonParser.parseString(file.readText()).asJsonObject
+        tree.addProperty("futurePrivacyInstruction", "SYNTHETIC_PRESERVE_ME")
+        val future = tree.toString().toByteArray(Charsets.UTF_8)
+        file.writeBytes(future)
+
+        assertEquals(1, library.scan().unreadableCount)
+        assertThrows(IllegalArgumentException::class.java) { library.save(entry.draft.copy(description = "older editor"), entry.draft.revision) }
+        assertArrayEquals(future, file.readBytes())
+        assertEquals(entry.importedSha256, PhotoDigest.sha256(entry.original))
+    }
 }
