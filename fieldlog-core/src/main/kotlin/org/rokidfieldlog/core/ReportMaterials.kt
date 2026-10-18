@@ -85,6 +85,7 @@ object ReportCodec {
             require(photo.asJsonObject["photoId"].isJsonPrimitive && photo.asJsonObject["photoId"].asJsonPrimitive.isString)
             require(photo.asJsonObject["role"].isJsonPrimitive && photo.asJsonObject["role"].asJsonPrimitive.isString)
         }
+        PhotographerReferenceJson.validate(tree["photographerReference"])
         val draft = gson.fromJson(tree, ReportDraft::class.java)
         require(CaptureFiles.validId(expectedId) && draft.reportId == expectedId && draft.schemaVersion == 1 && draft.revision >= 0)
         requireNotNull(draft.recipient); requireNotNull(draft.category); requireNotNull(draft.address)

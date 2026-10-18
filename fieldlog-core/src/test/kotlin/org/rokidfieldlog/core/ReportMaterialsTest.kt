@@ -382,4 +382,42 @@ class ReportMaterialsTest {
             assertThrows(IllegalArgumentException::class.java) { reports.save(draft.copy(handoff = handoff), draft.revision) }
         }
     }
+
+    @Test fun incompleteReportReferenceIsPreservedAndBlockedFromExport() {
+        val report = ready()
+        val reference = PhotographerReference(12.3, -45.6, locationTimeUtcMillis = 123000,
+            selectedAtUtcMillis = 124000, source = "SYNTHETIC_TEST")
+        val saved = reports.save(report.copy(photographerReference = reference), report.revision)
+        val file = File(root, "reports/" + report.reportId + ".json")
+        val tree = com.google.gson.JsonParser.parseString(ReportCodec.encode(saved)).asJsonObject
+        tree.getAsJsonObject("photographerReference").remove("latitude")
+        val broken = tree.toString().toByteArray(Charsets.UTF_8)
+        file.writeBytes(broken)
+
+        assertEquals(1, reports.scan().unreadableCount)
+        assertThrows(IllegalArgumentException::class.java) { reports.prepare(report.reportId) }
+        assertThrows(IllegalArgumentException::class.java) { reports.submissionText(report.reportId) }
+        assertArrayEquals(broken, file.readBytes())
+        assertFalse(File(root, "report-exports").exists())
+    }
+
+    @Test fun incompletePhotoDraftReferenceDoesNotOverwritePhotoOrOtherRecords() {
+        val first = imported(Color.RED); val other = imported(Color.BLUE)
+        val reference = PhotographerReference(12.3, -45.6, locationTimeUtcMillis = 123000,
+            selectedAtUtcMillis = 124000, source = "SYNTHETIC_TEST")
+        val saved = library.save(first.draft.copy(photographerReference = reference), first.draft.revision)
+        val file = File(saved.directory, "draft.json")
+        val tree = com.google.gson.JsonParser.parseString(DraftCodec.encode(saved.draft)).asJsonObject
+        tree.getAsJsonObject("photographerReference").remove("longitude")
+        val broken = tree.toString().toByteArray(Charsets.UTF_8)
+        file.writeBytes(broken)
+
+        val listing = library.scan()
+        assertEquals(1, listing.unreadableCount)
+        assertEquals(listOf(other.draft.photoId), listing.entries.map { it.draft.photoId })
+        assertThrows(IllegalArgumentException::class.java) { library.load(first.draft.photoId) }
+        assertArrayEquals(broken, file.readBytes())
+        assertEquals(first.importedSha256, PhotoDigest.sha256(first.original))
+        assertEquals(other, library.load(other.draft.photoId))
+    }
 }

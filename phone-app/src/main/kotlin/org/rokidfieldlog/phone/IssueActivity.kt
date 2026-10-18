@@ -61,6 +61,7 @@ class IssueActivity : Activity() {
     private fun render(loaded: LibraryEntry) {
         content.removeAllViews()
         val draft = loaded.draft
+        val currentForm = savedForm?.takeIf { it.getLong("formRevision", -1) == draft.revision }
         content.addView(OfflineUi.text(this, if (draft.isSynthetic) "合成演示记录" else "核对记录", 26f))
         content.addView(OfflineUi.text(this, "原图保留在本机；先保存编辑，再检查照片隐私。"))
         status = OfflineUi.text(this, OfflineUi.stage(draft.stage))
@@ -101,8 +102,8 @@ class IssueActivity : Activity() {
             content.addView(OfflineUi.text(this, "原始拍摄者位置：" + observation.latitude + ", " + observation.longitude +
                 "（" + observation.coordinateSystem + "）。问题实际位置需要独立确认。"))
         }
-        photographerReference = savedForm?.takeIf { it.getLong("formRevision", -1) == draft.revision }?.getString("referenceDraft")?.let { runCatching { DraftCodec.decode(it, id).photographerReference }.getOrNull() } ?: draft.photographerReference
-        if (savedForm?.getBoolean("referenceRemoved", false) == true) photographerReference = null
+        photographerReference = currentForm?.getString("referenceDraft")?.let { runCatching { DraftCodec.decode(it, id).photographerReference }.getOrNull() } ?: draft.photographerReference
+        if (currentForm?.getBoolean("referenceRemoved", false) == true) photographerReference = null
         ReferenceLocationPicker.add(this, content, photographerReference) { photographerReference = it }
         content.addView(OfflineUi.text(this, "照片：" + if (draft.photoReview == null) "尚未完成隐私审阅" else "已审阅导出副本"))
         content.addView(OfflineUi.button(this, "关联问题 / 添加本次观察") {
@@ -140,7 +141,7 @@ class IssueActivity : Activity() {
                 }.show()
         })
         content.addView(OfflineUi.button(this, "保存并返回列表") { leave() })
-        savedForm?.takeIf { it.getLong("formRevision", -1) == draft.revision }?.let { state ->
+        currentForm?.let { state ->
             category.setSelection(state.getInt("category")); address.setText(state.getString("address"))
             confirmed.isChecked = state.getBoolean("confirmed"); description.setText(state.getString("description"))
             eventDate = state.getString("date") ?: ""; date.text = "事发日期：" + eventDate.ifBlank { "待人工确认" }

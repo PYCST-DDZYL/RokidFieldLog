@@ -85,6 +85,7 @@ object DraftCodec {
             }
             require(point.has("coordinateSystem"))
         }
+        PhotographerReferenceJson.validate(tree["photographerReference"])
         val draft = gson.fromJson(tree, IssueDraft::class.java) ?: error("Missing draft")
         require(draft.schemaVersion == 1 && draft.photoId == expectedId && CaptureFiles.validId(expectedId))
         require(draft.revision >= 0)

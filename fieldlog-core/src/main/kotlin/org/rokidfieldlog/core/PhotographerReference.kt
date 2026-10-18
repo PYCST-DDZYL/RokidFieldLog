@@ -1,5 +1,6 @@
 package org.rokidfieldlog.core
 
+import com.google.gson.JsonElement
 import java.time.Instant
 
 /** An explicitly selected historic phone fix. Never an issue position or a capture-time claim. */
@@ -21,6 +22,35 @@ data class PhotographerReference(
     fun label(): String = "拍摄者参考位置（非问题位置，非拍摄时定位）：" + latitude + ", " + longitude +
         " · WGS84 · 精度估计 " + (accuracyMeters?.let { it.toString() + " 米" } ?: "未知") +
         " · 位置时间 " + Instant.ofEpochMilli(locationTimeUtcMillis) + " · 来源 " + source
+}
+
+/** Check the JSON before Gson can fill absent fields or coerce strings/numeric timestamps. */
+internal object PhotographerReferenceJson {
+    fun validate(value: JsonElement?) {
+        if (value == null || value.isJsonNull) return
+        require(value.isJsonObject) { "Invalid photographer reference" }
+        val point = value.asJsonObject
+        val fields = setOf("latitude", "longitude", "coordinateSystem", "accuracyMeters",
+            "locationTimeUtcMillis", "selectedAtUtcMillis", "source")
+        require(point.keySet().all { it in fields }) { "Unsupported photographer reference fields; preserve original record" }
+        for (key in listOf("latitude", "longitude")) {
+            val axis = point[key]
+            require(axis != null && axis.isJsonPrimitive && axis.asJsonPrimitive.isNumber) { "Missing numeric reference coordinate" }
+        }
+        for (key in listOf("coordinateSystem", "source")) {
+            val text = point[key]
+            require(text != null && text.isJsonPrimitive && text.asJsonPrimitive.isString) { "Missing reference $key" }
+        }
+        for (key in listOf("locationTimeUtcMillis", "selectedAtUtcMillis")) {
+            val time = point[key]
+            require(time != null && time.isJsonPrimitive && time.asJsonPrimitive.isNumber &&
+                time.toString().matches(Regex("[1-9][0-9]*")) && time.toString().toLongOrNull() != null) { "Invalid reference timestamp" }
+        }
+        point["accuracyMeters"]?.takeUnless { it.isJsonNull }?.let { accuracy ->
+            require(accuracy.isJsonPrimitive && accuracy.asJsonPrimitive.isNumber) { "Invalid reference accuracy" }
+        }
+        // Range, finite-value, WGS84, source and optional-accuracy checks follow in validate().
+    }
 }
 
 object Jiangsu12345 {
