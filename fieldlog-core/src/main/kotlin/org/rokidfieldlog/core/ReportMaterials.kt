@@ -334,6 +334,9 @@ class ReportRepository(private val root: File, private val texts: AtomicTextFile
             append("是否接受媒体采访：" + if (report.mediaInterview == true) "是\n" else "否\n")
             append("相册或打码照片是否被接收，须以本次实际提交结果为准。\n")
             append("官方附件：最多5个、单个10 MB；本应用每张JPG最多5 MB、长边2048像素。ZIP仅供交接解压，不是表单附件。\n")
+        } else {
+            if (report.contactName.isNotBlank()) append("联系人：" + report.contactName.trim() + "\n")
+            if (report.contactPhone.isNotBlank()) append("联系电话：" + report.contactPhone.trim() + "\n")
         }
         append("\n诉求目的：\n" + report.purpose.trim() + "\n\n")
         append("详细地址：\n" + ReportPaste.address(report) + "\n\n")
@@ -356,9 +359,13 @@ class ReportRepository(private val root: File, private val texts: AtomicTextFile
             "reportId" to report.reportId, "reportRevision" to report.revision, "isSynthetic" to report.isSynthetic,
             "recipient" to report.recipient.trim(), "category" to report.category.trim(), "address" to report.address.trim(),
             "landmark" to report.landmark.trim(), "eventDate" to report.eventDate, "description" to report.description.trim(),
-            "channelId" to report.channelId, "province" to report.province, "city" to report.city, "district" to report.district,
+            "channelId" to report.channelId,
+            "province" to report.province.takeIf { report.channelId == Jiangsu12345.ID },
+            "city" to report.city.takeIf { report.channelId == Jiangsu12345.ID },
+            "district" to report.district.takeIf { report.channelId == Jiangsu12345.ID },
             "purpose" to report.purpose, "contactName" to report.contactName, "contactPhone" to report.contactPhone,
-            "mediaInterview" to report.mediaInterview, "noticeAccepted" to report.noticeAccepted,
+            "mediaInterview" to report.mediaInterview.takeIf { report.channelId == Jiangsu12345.ID },
+            "noticeAccepted" to report.noticeAccepted.takeIf { report.channelId == Jiangsu12345.ID },
             "photographerReference" to report.photographerReference, "photographerReferenceRole" to "PHOTOGRAPHER_REFERENCE_NOT_ISSUE_LOCATION",
             "photos" to attachments, "submissionMethod" to "USER_SUBMITS_MANUALLY")
         ZipOutputStream(output.buffered()).use { zip ->

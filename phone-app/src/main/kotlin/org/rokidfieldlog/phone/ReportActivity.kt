@@ -8,6 +8,7 @@ import android.provider.DocumentsContract
 import android.text.Editable
 import android.text.InputFilter
 import android.text.TextWatcher
+import android.view.View
 import android.widget.*
 import org.rokidfieldlog.core.*
 import java.io.File
@@ -124,11 +125,11 @@ class ReportActivity : InspectionScreen() {
         val created = store.reports.createBatch(ids)
         created to store.reports.selected(created)
     }) { (created, selected) -> reportId = created.reportId; entries = selected; render(created) }
-    private fun field(hint: String, value: String, limit: Int, multiline: Boolean = false): EditText {
+    private fun field(hint: String, value: String, limit: Int, multiline: Boolean = false, parent: LinearLayout = content): EditText {
         val counter = OfflineUi.text(this, hint + " · " + value.length + "/" + limit)
-        content.addView(counter)
+        parent.addView(counter)
         return OfflineUi.field(this, hint, value, multiline).apply {
-            filters = arrayOf(InputFilter.LengthFilter(limit)); content.addView(this)
+            filters = arrayOf(InputFilter.LengthFilter(limit)); parent.addView(this)
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { counter.text = hint + " · " + (s?.length ?: 0) + "/" + limit; updateChecklist() }
@@ -154,22 +155,24 @@ class ReportActivity : InspectionScreen() {
             adapter = ArrayAdapter(this@ReportActivity, android.R.layout.simple_spinner_dropdown_item, listOf("通用人工交接（不声明渠道兼容）", "江苏12345网页（已核对公开字段）"))
             setSelection(if (value.channelId == Jiangsu12345.ID) 1 else 0)
         }; content.addView(channel)
-        content.addView(OfflineUi.text(this, "江苏12345公开字段核对：" + Jiangsu12345.CHECKED_ON + "。登录后个人信息和打码相册接收尚未实测；其他政务渠道未适配。"))
-        content.addView(OfflineUi.button(this, "打开江苏12345填写页") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Jiangsu12345.URL))) }.onFailure { status.text = "没有可用浏览器" } })
-        province = field("省（江苏入口填写江苏省）", value.province, 100)
-        city = field("市（按官方行政区划选项）", value.city, 100)
-        district = field("区 / 县（按官方行政区划选项）", value.district, 100)
-        contactName = field("联系人（交接用，官方个人信息另核对）", value.contactName, 80)
-        contactPhone = field("联系电话（会随材料导出）", value.contactPhone, 32).apply { inputType = android.text.InputType.TYPE_CLASS_PHONE }
-        content.addView(OfflineUi.text(this, "是否接受媒体采访（江苏必选）"))
+        content.addView(OfflineUi.text(this, "切换入口会保留已有填写；当前入口之外的专用字段只留在草稿中。"))
+        val channelFields = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = if (value.channelId == Jiangsu12345.ID) View.VISIBLE else View.GONE
+        }; content.addView(channelFields)
+        channelFields.addView(OfflineUi.text(this, "江苏12345公开字段核对：" + Jiangsu12345.CHECKED_ON + "。登录后个人信息和打码相册接收尚未实测；其他政务渠道未适配。"))
+        channelFields.addView(OfflineUi.button(this, "打开江苏12345填写页") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Jiangsu12345.URL))) }.onFailure { status.text = "没有可用浏览器" } })
+        province = field("省（江苏入口填写江苏省）", value.province, 100, parent = channelFields)
+        city = field("市（按官方行政区划选项）", value.city, 100, parent = channelFields)
+        district = field("区 / 县（按官方行政区划选项）", value.district, 100, parent = channelFields)
+        channelFields.addView(OfflineUi.text(this, "是否接受媒体采访（江苏必选）"))
         mediaInterview = Spinner(this).apply {
             adapter = ArrayAdapter(this@ReportActivity, android.R.layout.simple_spinner_dropdown_item, listOf("请选择", "是", "否"))
             setSelection(when (value.mediaInterview) { true -> 1; false -> 2; null -> 0 })
-        }; content.addView(mediaInterview)
-        content.addView(OfflineUi.text(this, Jiangsu12345.NOTICE))
-        content.addView(OfflineUi.button(this, "阅读江苏12345官方填报须知") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Jiangsu12345.NOTICE_URL))) }.onFailure { status.text = "没有可用浏览器" } })
-        noticeAccepted = CheckBox(this).apply { text = "我已阅读官方须知及上述联系方式与个人信息告知"; isChecked = value.noticeAccepted }; content.addView(noticeAccepted)
-        content.addView(OfflineUi.text(this, "不预先承诺接收方接受打码相册照片；首次实际提交后，在回执与试交记录里记下结果。"))
+        }; channelFields.addView(mediaInterview)
+        channelFields.addView(OfflineUi.text(this, Jiangsu12345.NOTICE))
+        channelFields.addView(OfflineUi.button(this, "阅读江苏12345官方填报须知") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Jiangsu12345.NOTICE_URL))) }.onFailure { status.text = "没有可用浏览器" } })
+        noticeAccepted = CheckBox(this).apply { text = "我已阅读官方须知及联系方式与个人信息告知"; isChecked = value.noticeAccepted }; channelFields.addView(noticeAccepted)
         photographerReference = value.photographerReference
         ReferenceLocationPicker.add(this, content, photographerReference) { photographerReference = it; updateChecklist() }
         recipient = field("实际接收人或渠道，如园区维修负责人", value.recipient, 120)
@@ -187,11 +190,22 @@ class ReportActivity : InspectionScreen() {
             }, initial.year, initial.monthValue - 1, initial.dayOfMonth).show()
         }; content.addView(date)
         description = field("正文：具体哪里损坏、影响什么、希望如何处理", value.description, 2000, true)
+        content.addView(OfflineUi.text(this, "联系方式：通用交接可选，江苏入口必填。填写后会随材料和分享说明交出，请按接收方要求提供。"))
+        contactName = field("联系人（官方个人信息另核对）", value.contactName, 80)
+        contactPhone = field("联系电话（会随材料交出）", value.contactPhone, 32).apply { inputType = android.text.InputType.TYPE_CLASS_PHONE }
+        content.addView(OfflineUi.text(this, "不预先承诺接收方接受打码相册照片；首次实际提交后，在回执与试交记录里记下结果。"))
         sameVisit = CheckBox(this).apply {
             text = "我已逐张核对：属于同一问题、同一次现场观察，且视角清晰可用"
             isChecked = value.sameIssueVisitConfirmed
         }
-        content.addView(OfflineUi.text(this, "照片：应用每张导出JPG最多5 MB、长边2048像素；江苏网页单个附件10 MB、最多5个。ZIP须先解压。", 19f))
+        val photoRequirements = OfflineUi.text(this, "", 19f)
+        fun showChannelFields() {
+            val jiangsu = channel.selectedItemPosition == 1
+            channelFields.visibility = if (jiangsu) View.VISIBLE else View.GONE
+            photoRequirements.text = "照片：应用每张导出JPG最多5 MB、长边2048像素，每份材料2–5张。ZIP须先解压。" +
+                if (jiangsu) "江苏网页单个附件10 MB、最多5个；请再核对实际入口要求。" else "请另行核对接收方的附件要求。"
+        }
+        showChannelFields(); content.addView(photoRequirements)
         for ((index, photo) in value.photos.withIndex()) {
             val entry = entries[photo.photoId]
             val card = OfflineUi.card(this)
@@ -235,7 +249,13 @@ class ReportActivity : InspectionScreen() {
         })
         checklist = OfflineUi.text(this, "").also { content.addView(it) }
         for (check in listOf(locationConfirmed, sameVisit, noticeAccepted)) check.setOnCheckedChangeListener { _, _ -> updateChecklist() }
-        for (spinner in listOf(channel, mediaInterview)) spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+        channel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                showChannelFields(); updateChecklist()
+            }
+        }
+        mediaInterview.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
             override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) { updateChecklist() }
         }

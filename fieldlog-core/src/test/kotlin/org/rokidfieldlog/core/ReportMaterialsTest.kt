@@ -114,6 +114,43 @@ class ReportMaterialsTest {
         assertThrows(IllegalArgumentException::class.java) { reports.save(draft.copy(photographerReference = invalid), draft.revision) }
     }
 
+    @Test fun genericContactsAppearInCopiedTextSharedTextAndZip() {
+        val initial = ready()
+        val report = reports.save(initial.copy(contactName = "SYNTHETIC contact", contactPhone = "00000000000"), initial.revision)
+        val text = reports.submissionText(report.reportId)
+        assertTrue(text.contains("联系人：SYNTHETIC contact"))
+        assertTrue(text.contains("联系电话：00000000000"))
+        assertEquals(text, reports.prepareShare(report.reportId, shareCache()).text)
+        val archive = unzip(reports.prepare(report.reportId).file)
+        assertEquals(text, archive.getValue("report.txt").toString(Charsets.UTF_8))
+        val summary = com.google.gson.JsonParser.parseString(archive.getValue("summary.json").toString(Charsets.UTF_8)).asJsonObject
+        assertEquals(report.contactName, summary["contactName"].asString)
+        assertEquals(report.contactPhone, summary["contactPhone"].asString)
+        val withoutContacts = reports.save(report.copy(contactName = "", contactPhone = ""), report.revision)
+        val omitted = reports.submissionText(withoutContacts.reportId)
+        assertFalse(omitted.contains("联系人：")); assertFalse(omitted.contains("联系电话："))
+    }
+
+    @Test fun switchingToGenericKeepsChannelDraftFieldsButExcludesThemFromPublicMaterials() {
+        val initial = ready()
+        val jiangsu = reports.save(initial.copy(channelId = Jiangsu12345.ID,
+            province = "江苏省", city = "合成市", district = "合成区", purpose = "合成诉求目的",
+            contactName = "SYNTHETIC contact", contactPhone = "00000000000", mediaInterview = true, noticeAccepted = true), initial.revision)
+        val generic = reports.save(jiangsu.copy(channelId = "GENERIC_MANUAL"), jiangsu.revision)
+        val archive = unzip(reports.prepare(generic.reportId).file)
+        val summary = com.google.gson.JsonParser.parseString(archive.getValue("summary.json").toString(Charsets.UTF_8)).asJsonObject
+        for (key in listOf("province", "city", "district", "mediaInterview", "noticeAccepted")) assertTrue(key, summary[key].isJsonNull)
+        val text = archive.getValue("report.txt").toString(Charsets.UTF_8)
+        assertFalse(text.contains("江苏省")); assertFalse(text.contains("媒体采访"))
+        assertEquals(generic, reports.load(generic.reportId))
+        val restored = reports.save(generic.copy(channelId = Jiangsu12345.ID), generic.revision)
+        assertTrue(ReportReadiness.reasons(restored, reports.selected(restored)).isEmpty())
+        val restoredArchive = unzip(reports.prepare(restored.reportId).file)
+        val restoredSummary = com.google.gson.JsonParser.parseString(restoredArchive.getValue("summary.json").toString(Charsets.UTF_8)).asJsonObject
+        assertEquals("江苏省", restoredSummary["province"].asString)
+        assertTrue(restoredSummary["mediaInterview"].asBoolean); assertTrue(restoredSummary["noticeAccepted"].asBoolean)
+    }
+
     @Test fun twoReviewedViewsExportWithOneSharedDescriptionAndWithoutPrivateSource() {
         val report = ready()
         val prepared = reports.prepare(report.reportId)

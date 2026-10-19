@@ -35,8 +35,8 @@ android {
         applicationId = "org.rokidfieldlog.phone"
         minSdk = 28
         targetSdk = 36
-        versionCode = 11
-        versionName = "0.7.3-export-recovery"
+        versionCode = 12
+        versionName = "0.7.4-report-form"
     }
     signingConfigs {
         create("persistentRelease") {
