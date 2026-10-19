@@ -11,6 +11,7 @@ if ($Target -eq 'glasses') {
 } else {
     $requiredClasses += @("$expectedPackage.OnSiteActivity", "$expectedPackage.AddressSuggestionLookup", "$expectedPackage.ReportHandoffActivity", "$expectedPackage.ReferenceLocationPicker", "org.rokidfieldlog.core.PhotographerReference", "$expectedPackage.LocationProbe", "$expectedPackage.LocationActivity", "$expectedPackage.IssueActivity", "$expectedPackage.PrivacyActivity", "$expectedPackage.RedactionView", "$expectedPackage.InspectionActivity", "$expectedPackage.InspectionLinkActivity", "$expectedPackage.InspectionCompareActivity", "$expectedPackage.InspectionSamples", "$expectedPackage.ReportActivity", "$expectedPackage.MaterialSharing", "$expectedPackage.ReviewedPhotoProvider", 'org.rokidfieldlog.core.LocationAttempt', 'org.rokidfieldlog.core.OfflineLibrary', 'org.rokidfieldlog.core.MaterialExporter', 'org.rokidfieldlog.core.InspectionRepository', 'org.rokidfieldlog.core.ReportRepository', 'org.rokidfieldlog.core.ReviewedShareCache', 'org.rokidfieldlog.core.MaterialDocumentCopy')
 }
+if ($Target -eq 'phone') { $requiredClasses += 'org.rokidfieldlog.core.FreshJpeg' }
 Push-Location $projectRoot
 try {
     if (!(Test-Path -LiteralPath $relativeApk)) { throw 'APK missing; build first.' }

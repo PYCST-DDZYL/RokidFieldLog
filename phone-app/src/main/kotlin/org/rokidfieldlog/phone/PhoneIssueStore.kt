@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorSpace
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.util.AtomicFile
@@ -102,9 +103,12 @@ class PhoneIssueStore(context: Context) {
         require(PhotoDigest.sha256(entry.original) == entry.importedSha256) { "原图与导入时不一致，请核查采集包" }
         val profile = MaterialProfile()
         val preview = uprightPreview(entry.original, profile.maxLongEdge)
-        var bitmap = preview.copy(Bitmap.Config.ARGB_8888, true)
+        var bitmap = Bitmap.createBitmap(preview.width, preview.height, Bitmap.Config.ARGB_8888,
+            false, ColorSpace.get(ColorSpace.Named.SRGB))
+        Canvas(bitmap).drawBitmap(preview, 0f, 0f, null)
         preview.recycle()
         val target = entry.reviewFile("review-" + UUID.randomUUID() + ".jpg")
+        val encoded = entry.reviewFile("review-" + UUID.randomUUID() + ".jpg")
         try {
             val canvas = Canvas(bitmap)
             val paint = Paint().apply { color = Color.BLACK; isAntiAlias = false }
@@ -114,8 +118,12 @@ class PhoneIssueStore(context: Context) {
             }
             var quality = 93
             while (true) {
+                encoded.outputStream().use { output ->
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output)) { "照片编码失败，原图已保留" }
+                }
                 target.outputStream().use { output ->
-                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output))
+                    val removed = FreshJpeg.copyWithoutMetadata(encoded, output)
+                    if (removed.isNotEmpty()) android.util.Log.d("FieldLogReview", "Removed encoder JPEG markers: " + removed.joinToString { it.toString(16) })
                     output.fd.sync()
                 }
                 if (target.length() <= profile.maxPhotoBytes) break
@@ -125,12 +133,12 @@ class PhoneIssueStore(context: Context) {
                     (bitmap.height * 0.8f).toInt().coerceAtLeast(1), true)
                 bitmap.recycle(); bitmap = next; quality = 90
             }
-            check(!JpegPrivacy.hasPrivateMetadata(target))
+            check(!JpegPrivacy.hasPrivateMetadata(target)) { "导出副本仍包含无关元数据，未采用；原图已保留" }
             checkNotNull(dimensions(target))
             require(PhotoDigest.sha256(entry.original) == entry.importedSha256) { "原图在处理时发生变化" }
             return PhotoReview(target.name, entry.importedSha256, PhotoDigest.sha256(target),
                 target.length(), bitmap.width, bitmap.height, masks.toList())
         } catch (error: Exception) { target.delete(); throw error }
-        finally { bitmap.recycle() }
+        finally { encoded.delete(); bitmap.recycle() }
     }
 }

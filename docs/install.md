@@ -8,7 +8,9 @@ For ongoing use, install phone-app-release.apk from a retained-key release build
 
 ## Preview signing and updates
 
-Release builds now require the retained key. Initialize it once with scripts/Initialize-ReleaseSigning.ps1 and build with scripts/Build.ps1 -Release -Verify. Keep BOTH .private/fieldlog-release.p12 and .private/release-signing.properties in a secure backup. The script preserves an existing key and refuses to replace an incomplete pair. The tracked release-certificate.sha256 pins the public certificate: fresh clones must restore the existing key, and Gradle rejects a different certificate. Never commit either file. Release signing has no debug fallback. APKs are in each module's build/outputs/apk/release directory. Use Install-App.ps1 -Target phone -Release -ConfirmInstallation -StartApp for an already authorized device.
+Release builds now require the retained key. Initialize it once with scripts/Initialize-ReleaseSigning.ps1 and build with scripts/Build.ps1 -Release -Verify -Clean. Keep BOTH .private/fieldlog-release.p12 and .private/release-signing.properties in a secure backup. The script preserves an existing key and refuses to replace an incomplete pair. The tracked release-certificate.sha256 pins the public certificate: fresh clones must restore the existing key, and Gradle rejects a different certificate. Never commit either file. Release signing has no debug fallback. APKs are in each module's build/outputs/apk/release directory. Use Install-App.ps1 -Target phone -Release -ConfirmInstallation -StartApp for an already authorized device.
+
+Finish source edits before building. The Windows build script compares source, resources and build-tool inputs before and after verification, and writes an ignored `.local/verified-build-<variant>.json` receipt only after both APK checks pass. Installation through the project script requires that receipt, matching APK hashes and unchanged inputs. An interrupted build or later source edit requires rebuilding; file modification times alone do not prove APK freshness. `-Clean` clears the shared core and both Android modules and disables Gradle build-cache restoration for that run. Documentation-only changes do not invalidate the receipt. Android Studio/CI builds still use their normal Gradle workflows; run the Windows project build before using its guarded installer.
 
 For another build computer, restore the same pair. For the manual Signed release APKs workflow, provision FIELDLOG_RELEASE_KEY_BASE64 (the same PKCS12 file encoded as base64), FIELDLOG_RELEASE_STORE_PASSWORD and FIELDLOG_RELEASE_KEY_PASSWORD as repository secrets. The alias is fieldlog-release. This change does not configure remote secrets or publish a release; missing secrets fail the workflow. CI debug artifacts remain for development.
 
@@ -73,13 +75,13 @@ After approving installation and confirming a physical phone with an authorized 
 
 From the companion home screen choose “更多：演示与定位检查” → “定位检查”. Permit foreground precise or approximate location. Outdoors, tap the automatic location test. It waits up to 8 seconds for Fused, then uses remaining time for system providers, with a 60-second total deadline. A valid low-precision observation is shown provisionally while waiting for a more accurate fix. At the deadline only a fix no older than 5 seconds can become a labeled best-available result. The Android-system button bypasses Fused. Leaving the screen or pressing Stop cancels the request. Failure saves a reason and null location, never fabricated coordinates.
 
-Historical results are labeled as history. The phone probe has not yet been hardware-tested, including no-Google-services behavior. The private latest-result check is:
+Historical results are labeled as history. Fused and Android-system GPS-provider results and explicit cancellation have been observed on one Samsung phone with Google Play services; no-Google-services behavior and other manufacturers remain unverified. The private latest-result check for a debuggable build is:
 
 ```powershell
 .\scripts\Read-PhoneProbe.ps1
 ```
 
-This script only reads this package and hides coordinates in the terminal. Reading a previous fix is not a new GPS observation.
+This script only reads this package and hides coordinates in the terminal. Release builds deliberately reject `run-as`; inspect their result inside the app instead. Reading a previous fix is not a new GPS observation.
 
 ## Delete and uninstall
 

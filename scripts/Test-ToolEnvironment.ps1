@@ -16,4 +16,27 @@ foreach ($scriptFile in Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1'
     [System.Management.Automation.Language.Parser]::ParseFile($scriptFile.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
     if ($parseErrors) { throw "Invalid PowerShell script: $($scriptFile.Name)" }
 }
-Write-Output "Tool regression checks passed on PowerShell $($PSVersionTable.PSVersion): stderr, failure exit, missing executable, stdin, and script parsing."
+. (Join-Path $PSScriptRoot 'Get-ProjectBuildInputFingerprint.ps1')
+$fixtureRoot = Join-Path $localRoot ('build-input-fixture-' + [Guid]::NewGuid().ToString('N'))
+$fixtureSource = Join-Path $fixtureRoot 'phone-app/src/main'
+New-Item -ItemType Directory -Path $fixtureSource -Force | Out-Null
+$fixtureFile = Join-Path $fixtureSource 'Synthetic.kt'
+[IO.File]::WriteAllText($fixtureFile, 'synthetic version 1')
+$initialFingerprint = Get-ProjectBuildInputFingerprint -Root $fixtureRoot
+Assert-ProjectBuildInputsUnchanged -Root $fixtureRoot -Expected $initialFingerprint
+[IO.File]::WriteAllText((Join-Path $fixtureRoot 'README.md'), 'documentation only')
+Assert-ProjectBuildInputsUnchanged -Root $fixtureRoot -Expected $initialFingerprint
+[IO.File]::WriteAllText($fixtureFile, 'synthetic version 2')
+$changeRejected = $false
+try { Assert-ProjectBuildInputsUnchanged -Root $fixtureRoot -Expected $initialFingerprint } catch { $changeRejected = $true }
+if (!$changeRejected) { throw 'Source change during a build was not rejected.' }
+[IO.File]::WriteAllText($fixtureFile, 'synthetic version 1')
+Assert-ProjectBuildInputsUnchanged -Root $fixtureRoot -Expected $initialFingerprint
+$extraFile = Join-Path $fixtureSource 'Added.kt'
+[IO.File]::WriteAllText($extraFile, 'synthetic addition')
+if ((Get-ProjectBuildInputFingerprint -Root $fixtureRoot) -eq $initialFingerprint) { throw 'New source file was not detected.' }
+$withExtra = Get-ProjectBuildInputFingerprint -Root $fixtureRoot
+Remove-Item -LiteralPath $extraFile
+if ((Get-ProjectBuildInputFingerprint -Root $fixtureRoot) -eq $withExtra) { throw 'Removed source file was not detected.' }
+Assert-ProjectBuildInputsUnchanged -Root $fixtureRoot -Expected $initialFingerprint
+Write-Output "Tool regression checks passed on PowerShell $($PSVersionTable.PSVersion): native I/O, script parsing, unchanged inputs, documentation exclusion, source edits, additions and removals."
