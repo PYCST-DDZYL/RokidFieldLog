@@ -225,6 +225,7 @@ class CaptureRepository(
             require(record.photoId == id && record.photoFile == "photos/$id.jpg") { "记录路径异常，原文件保留" }
             val photo = files.completed(id)
             require(photo.isFile && CaptureFiles.hasJpegMarkers(photo)) { "照片不完整，未导出" }
+            require(photo.length() <= CapturePackage.MAX_PHOTO_BYTES) { "单张照片超过16 MiB，未导出；原照片保留" }
             require(images.dimensions(photo) == (record.width to record.height)) { "照片尺寸变化，未导出" }
             val hash = PhotoDigest.sha256(photo)
             require(record.photoSha256 == null || record.photoSha256.equals(hash, true)) { "照片指纹变化，未导出" }
@@ -232,6 +233,9 @@ class CaptureRepository(
         }
         require(captures.isNotEmpty()) { "暂无可导出的已验证照片" }
         require(captures.size <= CapturePackage.MAX_RECORDS) { "采集包最多100张，请先分批转存" }
+        // CapturePackage enforces the same limit mid-stream; report it before writing a partial archive.
+        val totalBytes = captures.sumOf { it.photo.length() + CaptureRecordCodec.encode(it.document).toByteArray(Charsets.UTF_8).size }
+        require(totalBytes <= CapturePackage.MAX_TOTAL_BYTES) { "采集包超过256 MiB，未导出；原照片保留" }
         CapturePackage.write(output, captures)
         captures.size
     }

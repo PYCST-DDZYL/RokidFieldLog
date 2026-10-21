@@ -97,12 +97,12 @@ object InspectionCodec {
                     val date = LocalDate.parse(requireNotNull(event.observedOn))
                     prior.lastOrNull { it.kind == InspectionEventKind.OBSERVATION }?.let { require(date >= LocalDate.parse(it.observedOn)) { "请按观察日期先后关联照片" } }
                     requireNotNull(event.visibility); requireNotNull(event.finding); require(event.sameSiteConfirmed)
-                    if (event.visibility != InspectionVisibility.CLEAR) require(event.finding == InspectionFinding.UNABLE_TO_ASSESS)
+                    if (event.visibility != InspectionVisibility.CLEAR) require(event.finding == InspectionFinding.UNABLE_TO_ASSESS) { "位置未清楚可见时，观察结果只能选择无法判断" }
                     require(event.basedOnObservationId == null && event.decision == null && !event.chronologyConfirmed)
                     if (index == 0) require(event.finding == InspectionFinding.PROBLEM_PRESENT && event.visibility == InspectionVisibility.CLEAR)
                 }
                 InspectionEventKind.REPAIR_CLAIM -> {
-                    require(index > 0 && event.note.isNotBlank())
+                    require(index > 0 && event.note.isNotBlank()) { "请填写维修方的反馈、回执或说明" }
                     requireNoPhoto(event); require(event.basedOnObservationId == null && event.decision == null && !event.chronologyConfirmed)
                 }
                 InspectionEventKind.VERIFICATION -> {
@@ -119,7 +119,7 @@ object InspectionCodec {
                             require(latest.sequence > claim.sequence && event.chronologyConfirmed) { "需要维修反馈之后的复查照片并核对先后顺序" }
                             require(latest.visibility == InspectionVisibility.CLEAR && latest.finding == InspectionFinding.NO_VISIBLE_PROBLEM) { "照片需要清晰显示问题位置且未见原问题" }
                         }
-                        VerificationDecision.STILL_PRESENT -> require(latest.visibility == InspectionVisibility.CLEAR && latest.finding == InspectionFinding.PROBLEM_PRESENT)
+                        VerificationDecision.STILL_PRESENT -> require(latest.visibility == InspectionVisibility.CLEAR && latest.finding == InspectionFinding.PROBLEM_PRESENT) { "最近照片需要清晰显示问题仍在，才能确认仍存在" }
                         VerificationDecision.INCONCLUSIVE -> Unit
                     }
                 }

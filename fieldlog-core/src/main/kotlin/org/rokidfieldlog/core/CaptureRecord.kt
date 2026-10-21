@@ -16,8 +16,8 @@ data class GeoPoint(
     @field:SerializedName("coordinateSystem") val coordinateSystem: CoordinateSystem? = null,
 ) {
     init {
-        require(latitude.isFinite() && latitude in -90.0..90.0)
-        require(longitude.isFinite() && longitude in -180.0..180.0)
+        require(latitude.isFinite() && latitude in -90.0..90.0) { "纬度须在 -90 到 90 之间" }
+        require(longitude.isFinite() && longitude in -180.0..180.0) { "经度须在 -180 到 180 之间" }
     }
 }
 

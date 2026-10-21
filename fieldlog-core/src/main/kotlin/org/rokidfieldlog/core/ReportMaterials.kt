@@ -106,7 +106,7 @@ object ReportCodec {
         with(draft.handoff) {
             require(receipt.length <= 200 && extraRequirements.length <= 1000 && rejectedPhotos.length <= 1000)
             require(attemptedOn.isEmpty() || runCatching { LocalDate.parse(attemptedOn) }.isSuccess)
-            require(elapsedMinutes.isEmpty() || (elapsedMinutes.matches(Regex("[0-9]{1,5}")) && elapsedMinutes.toInt() > 0))
+            require(elapsedMinutes.isEmpty() || (elapsedMinutes.matches(Regex("[0-9]{1,5}")) && elapsedMinutes.toInt() > 0)) { "耗时请填写大于 0 的分钟数，或留空" }
             require(albumResult in setOf("UNKNOWN", "ACCEPTED", "REJECTED", "NOT_NEEDED"))
             require(inspectionIssueId == null || CaptureFiles.validId(inspectionIssueId))
         }

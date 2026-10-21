@@ -60,5 +60,7 @@ class CaptureRecordTest {
     @Test fun nonFiniteAndOutOfRangeMapCoordinatesAreRejected() {
         assertThrows(IllegalArgumentException::class.java) { GeoPoint(Double.NaN, 0.0, CoordinateSystem.WGS84) }
         assertThrows(IllegalArgumentException::class.java) { GeoPoint(0.0, 181.0, CoordinateSystem.GCJ02) }
+        // The phone form surfaces this message directly when a typed coordinate is out of range.
+        assertTrue(assertThrows(IllegalArgumentException::class.java) { GeoPoint(91.0, 0.0, CoordinateSystem.WGS84) }.message!!.contains("纬度"))
     }
 }

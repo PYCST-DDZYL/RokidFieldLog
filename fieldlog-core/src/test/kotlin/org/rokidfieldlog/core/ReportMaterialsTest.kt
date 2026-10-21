@@ -418,6 +418,8 @@ class ReportMaterialsTest {
             ReportHandoff(albumResult = "ASSUMED_ACCEPTED"), ReportHandoff(inspectionIssueId = "../bad"))) {
             assertThrows(IllegalArgumentException::class.java) { reports.save(draft.copy(handoff = handoff), draft.revision) }
         }
+        val zero = assertThrows(IllegalArgumentException::class.java) { reports.save(draft.copy(handoff = ReportHandoff(elapsedMinutes = "0")), draft.revision) }
+        assertTrue(zero.message!!.contains("分钟"))
     }
 
     @Test fun incompleteReportReferenceIsPreservedAndBlockedFromExport() {

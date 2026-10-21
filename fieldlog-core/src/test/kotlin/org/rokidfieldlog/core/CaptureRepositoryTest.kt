@@ -65,6 +65,17 @@ class CaptureRepositoryTest {
         assertThrows(IllegalArgumentException::class.java) { repo.writePackage(java.io.ByteArrayOutputStream()) }
     }
 
+    @Test fun oversizedPhotoExportFailsWithReadableMessageAndKeepsOriginal() {
+        val repo = repository(images = ImageInspector { _ -> 16 to 16 })
+        val stamp = save(repo)
+        val oversized = ByteArray((CapturePackage.MAX_PHOTO_BYTES + 1).toInt()).apply {
+            this[0] = 0xff.toByte(); this[1] = 0xd8.toByte(); this[size - 2] = 0xff.toByte(); this[size - 1] = 0xd9.toByte()
+        }
+        photo(stamp.photoId).writeBytes(oversized)
+        val error = assertThrows(IllegalArgumentException::class.java) { repo.writePackage(java.io.ByteArrayOutputStream()) }
+        assertTrue(error.message!!.contains("16 MiB"))
+        assertEquals(oversized.size.toLong(), photo(stamp.photoId).length())
+    }
     @Test fun unchangedColdStartSkipsDecodeAndDoesNotRewriteRecord() {
         val saved = save()
         val original = storage.read(saved.photoId)

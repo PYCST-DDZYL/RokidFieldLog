@@ -84,6 +84,19 @@ class InspectionRepositoryTest {
             assertEquals(issue, repo.load(issue.issueId))
         }
     }
+    @Test fun userReachableInspectionRejectionsExplainTheProblem() {
+        val issue = create()
+        val obstructed = assertThrows(IllegalArgumentException::class.java) {
+            observe(issue, InspectionFinding.PROBLEM_PRESENT, InspectionVisibility.OBSTRUCTED)
+        }
+        assertTrue(obstructed.message!!.contains("无法判断"))
+        val blankClaim = assertThrows(IllegalArgumentException::class.java) { repo.repairClaim(issue.issueId, issue.revision, "  ") }
+        assertTrue(blankClaim.message!!.contains("维修"))
+        val clear = observe(issue)
+        val stillPresent = assertThrows(IllegalArgumentException::class.java) { verify(clear, VerificationDecision.STILL_PRESENT) }
+        assertTrue(stillPresent.message!!.contains("仍存在"))
+        assertEquals(clear, repo.load(issue.issueId))
+    }
     @Test fun oldObservationCannotVerifyNewRepairClaim() {
         val issue = create(); val claim = repo.repairClaim(issue.issueId, issue.revision, "Repair reported after original photo")
         assertThrows(IllegalArgumentException::class.java) { verify(claim, VerificationDecision.STILL_PRESENT) }

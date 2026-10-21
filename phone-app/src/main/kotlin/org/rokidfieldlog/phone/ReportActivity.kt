@@ -382,7 +382,7 @@ class ReportActivity : InspectionScreen() {
             val result = runCatching { store.reports.prepare(saved.reportId) }
             runOnUiThread {
                 if (isDestroyed || isFinishing) {
-                    result.getOrNull()?.let { prepared -> PrivateProbeStore.fileExecutor.execute { store.reports.discard(prepared) } }
+                    result.getOrNull()?.let { prepared -> PrivateProbeStore.fileExecutor.execute { runCatching { store.reports.discard(prepared) } } }
                     return@runOnUiThread
                 }
                 busy = false; OfflineUi.enable(content, true)
@@ -427,7 +427,7 @@ class ReportActivity : InspectionScreen() {
     override fun onBackPressed() { if (android.os.Build.VERSION.SDK_INT < 33) leave() else super.onBackPressed() }
     private fun discardPending() {
         val prepared = pending ?: return; pending = null
-        PrivateProbeStore.fileExecutor.execute { store.reports.discard(prepared) }
+        PrivateProbeStore.fileExecutor.execute { runCatching { store.reports.discard(prepared) } }
     }
     @Deprecated("System document picker callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -436,7 +436,7 @@ class ReportActivity : InspectionScreen() {
         val prepared = pending ?: return
         pending = null
         val uri = data?.data
-        if (resultCode != RESULT_OK || uri == null) { PrivateProbeStore.fileExecutor.execute { store.reports.discard(prepared) }; status.text = "已取消材料保存"; return }
+        if (resultCode != RESULT_OK || uri == null) { PrivateProbeStore.fileExecutor.execute { runCatching { store.reports.discard(prepared) } }; status.text = "已取消材料保存"; return }
         task("正在保存到你选择的位置…", {
             runCatching {
                 try {
