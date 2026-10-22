@@ -5,6 +5,7 @@ $relativeApk = "$moduleName/build/outputs/apk/$Variant/$moduleName-$Variant.apk"
 $analyzer = Join-Path $env:ANDROID_HOME 'cmdline-tools/latest/bin/apkanalyzer.bat'
 $expectedPackage = "org.rokidfieldlog.$Target"
 $requiredClasses = @("$expectedPackage.MainActivity")
+$requiredClasses += 'org.rokidfieldlog.core.RecordJson'
 if ($Target -eq 'glasses') {
     $requiredClasses += @("$expectedPackage.GlassesApplication", 'org.rokidfieldlog.core.CaptureFiles', 'org.rokidfieldlog.core.CapturePackage')
     if ($Variant -eq 'debug') { $requiredClasses += "$expectedPackage.RecoveryInstrumentation" }

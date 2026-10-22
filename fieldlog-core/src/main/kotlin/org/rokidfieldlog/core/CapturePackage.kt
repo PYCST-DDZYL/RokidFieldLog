@@ -1,8 +1,5 @@
 package org.rokidfieldlog.core
 
-import com.google.gson.GsonBuilder
-import com.google.gson.JsonObject
-import com.google.gson.Strictness
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -20,6 +17,9 @@ object CapturePackage {
     const val MAX_TOTAL_BYTES = 256L * 1024 * 1024
     const val MAX_JSON_BYTES = 256L * 1024
     private val path = Regex("(records|photos)/([0-9a-f-]{36})\\.(json|jpg)")
+
+    internal fun manifestBytes(count: Int, isSynthetic: Boolean = false) =
+        ("{\"format\":\"FIELDLOG_CAPTURE_PACKAGE\",\"version\":1,\"recordCount\":" + count + ",\"isSynthetic\":" + isSynthetic + "}").toByteArray(Charsets.UTF_8)
 
     fun read(input: InputStream, staging: File, inspector: ImageInspector): IncomingPackage {
         check(staging.isDirectory && staging.list()?.isEmpty() == true) { "Fresh staging directory required" }
@@ -60,9 +60,7 @@ object CapturePackage {
         }
         val manifestFile = File(staging, "fieldlog-package.json")
         require(manifestFile.isFile) { "Missing capture package manifest" }
-        val manifest = GsonBuilder().setStrictness(Strictness.STRICT).create()
-            .fromJson(manifestFile.readText(Charsets.UTF_8), JsonObject::class.java)
-        requireNotNull(manifest)
+        val manifest = RecordJson.objectValue(manifestFile.readText(Charsets.UTF_8), MAX_JSON_BYTES.toInt())
         require(manifest["format"]?.asString == "FIELDLOG_CAPTURE_PACKAGE")
         val version = manifest["version"]
         require(version != null && version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.toString() == "1") {
@@ -95,10 +93,11 @@ object CapturePackage {
         require(captures.isNotEmpty() && captures.size <= MAX_RECORDS)
         require(captures.map { it.document.record.photoId }.toSet().size == captures.size)
         ZipOutputStream(output.buffered()).use { zip ->
+            val manifest = manifestBytes(captures.size, isSynthetic)
             zip.putNextEntry(ZipEntry("fieldlog-package.json"))
-            zip.write(("{\"format\":\"FIELDLOG_CAPTURE_PACKAGE\",\"version\":1,\"recordCount\":" + captures.size + ",\"isSynthetic\":" + isSynthetic + "}").toByteArray(Charsets.UTF_8))
+            zip.write(manifest)
             zip.closeEntry()
-            var total = 0L
+            var total = manifest.size.toLong()
             for (capture in captures) {
                 val id = capture.document.record.photoId
                 require(CaptureFiles.validId(id) && capture.photo.length() in 1..MAX_PHOTO_BYTES)

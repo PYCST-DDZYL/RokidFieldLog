@@ -459,4 +459,36 @@ class ReportMaterialsTest {
         assertEquals(first.importedSha256, PhotoDigest.sha256(first.original))
         assertEquals(other, library.load(other.draft.photoId))
     }
+
+    @Test fun punctuationOnlyTelephoneCannotPassTheGovernmentChecklist() {
+        val initial = ready()
+        val report = initial.copy(channelId = Jiangsu12345.ID, province = "江苏省", city = "合成市", district = "合成区",
+            purpose = "合成诉求", contactName = "合成联系人", mediaInterview = false, noticeAccepted = true)
+        for (phone in listOf("-----", "(   )", "+---()", "123--")) {
+            val candidate = report.copy(contactPhone = phone)
+            assertTrue(phone, ReportReadiness.reasons(candidate, reports.selected(initial)).any { it.contains("联系电话") })
+        }
+        for (phone in listOf("00000000000", "+86 (000) 0000-0000", "00000")) {
+            assertTrue(phone, ReportReadiness.reasons(report.copy(contactPhone = phone), reports.selected(initial)).isEmpty())
+        }
+    }
+
+    @Test fun ambiguousConfirmationPreservesBothStoredMaterialsAndBlocksOutgoingCopies() {
+        val report = ready()
+        val healthy = reports.createOnSite()
+        val file = File(root, "reports/" + report.reportId + ".json")
+        val broken = ReportCodec.encode(report).replace("\"locationConfirmed\": true",
+            "\"locationConfirmed\": false, \"locationConfirmed\": true").toByteArray(Charsets.UTF_8)
+        file.writeBytes(broken)
+        assertEquals(1, reports.scan().unreadableCount)
+        assertEquals(listOf(healthy), reports.scan().reports)
+        assertThrows(Exception::class.java) { reports.prepare(report.reportId) }
+        assertThrows(Exception::class.java) { reports.submissionText(report.reportId) }
+        assertThrows(Exception::class.java) { reports.prepareShare(report.reportId, shareCache()) }
+        assertThrows(Exception::class.java) { reports.save(report, report.revision) }
+        assertArrayEquals(broken, file.readBytes())
+        assertFalse(File(root, "report-exports").exists())
+        assertFalse(File(root, "test-share-cache").exists())
+        assertEquals(healthy, reports.load(healthy.reportId))
+    }
 }

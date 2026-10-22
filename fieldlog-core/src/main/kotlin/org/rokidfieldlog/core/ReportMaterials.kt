@@ -65,15 +65,15 @@ object ReportCodec {
     fun encode(draft: ReportDraft): String = gson.toJson(draft)
     fun decode(text: String, expectedId: String): ReportDraft {
         require(text.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "材料记录过大" }
-        val tree = gson.fromJson(text, JsonObject::class.java) ?: error("缺少材料记录")
+        val tree = RecordJson.objectValue(text, MAX_BYTES)
         require(tree.keySet().all { it in fields }) { "材料记录含未知字段，原文件保留" }
         require(listOf("schemaVersion", "reportId", "revision", "photos").all { tree.has(it) })
         for (key in listOf("recipient", "category", "address", "landmark", "eventDate", "description", "reportId", "channelId", "province", "city", "district", "purpose", "contactName", "contactPhone", "addressSuggestion")) {
             tree[key]?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) }
         }
-        for (key in listOf("schemaVersion", "revision")) {
-            require(tree[key].isJsonPrimitive && tree[key].asJsonPrimitive.isNumber && tree[key].toString().matches(Regex("[0-9]+")))
-        }
+        RecordJson.integer(tree["schemaVersion"], Int.MAX_VALUE.toLong())
+        require(tree["schemaVersion"].toString() == "1") { "尚不支持此材料版本，原文件保留" }
+        RecordJson.integer(tree["revision"])
         for (key in listOf("locationConfirmed", "sameIssueVisitConfirmed", "noticeAccepted", "albumAcceptanceConfirmed")) {
             tree[key]?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) }
         }
@@ -133,7 +133,8 @@ object ReportReadiness {
             if (report.province != "江苏省" || report.city.isBlank() || report.district.isBlank()) reasons += "请填写江苏省、市、区县（以官方区划选项为准）"
             if (ReportPaste.address(report).length > 200) reasons += "详细地址与参照物合计超过网页200字，请精简"
             if (report.purpose.isBlank() || report.purpose.length > 100) reasons += "请填写100字以内的诉求目的"
-            if (report.contactName.isBlank() || !report.contactPhone.matches(Regex("[+0-9() -]{5,32}"))) reasons += "请填写联系人及有效联系电话，并在官方个人信息中核对"
+            if (report.contactName.isBlank() || !report.contactPhone.matches(Regex("[+0-9() -]{5,32}")) ||
+                report.contactPhone.count { it in '0'..'9' } < 5) reasons += "请填写联系人及有效联系电话，并在官方个人信息中核对"
             if (report.mediaInterview == null) reasons += "请选择是否接受媒体采访"
             if (!report.noticeAccepted) reasons += "请阅读官方须知并确认联系方式与个人信息告知"
         }

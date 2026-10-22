@@ -220,4 +220,22 @@ class InspectionRepositoryTest {
             first.observations.first().eventId, VerificationDecision.INCONCLUSIVE, false, " ") }
         assertEquals(first, repo.load(first.issueId))
     }
+
+    @Test fun coercedChronologyCannotLoadAsRepairedOrOverwriteTheStoredHistory() {
+        val first = create()
+        val claim = repo.repairClaim(first.issueId, first.revision, "SYNTHETIC repair feedback")
+        val verified = verify(observe(claim))
+        val healthy = create()
+        val target = File(folder, verified.issueId + ".json")
+        val broken = InspectionCodec.encode(verified).replace("\"chronologyConfirmed\": true",
+            "\"chronologyConfirmed\": \"true\"").toByteArray(Charsets.UTF_8)
+        target.writeBytes(broken)
+        assertEquals(1, repo.scan().unreadableCount)
+        assertEquals(listOf(healthy), repo.scan().issues)
+        assertThrows(IllegalArgumentException::class.java) { repo.load(verified.issueId) }
+        assertThrows(IllegalArgumentException::class.java) { repo.repairClaim(verified.issueId, verified.revision, "Must not overwrite") }
+        assertThrows(IllegalStateException::class.java) { repo.requireUnlinked(first.observations.first().photoId!!) }
+        assertArrayEquals(broken, target.readBytes())
+        assertEquals(healthy, repo.load(healthy.issueId))
+    }
 }

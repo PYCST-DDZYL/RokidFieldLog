@@ -3,27 +3,18 @@ package org.rokidfieldlog.core
 import com.google.gson.GsonBuilder
 import java.io.File
 import java.io.OutputStream
-import java.io.RandomAccessFile
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 object JpegPrivacy {
-    /** Fresh report JPEGs must not carry EXIF, XMP, ICC, IPTC or comment segments. */
-    fun hasPrivateMetadata(file: File): Boolean = RandomAccessFile(file, "r").use { input ->
-        require(input.length() >= 4 && input.readUnsignedShort() == 0xffd8) { "Invalid JPEG" }
-        while (input.filePointer < input.length()) {
-            require(input.readUnsignedByte() == 0xff) { "Invalid JPEG marker" }
-            var marker = input.readUnsignedByte()
-            while (marker == 0xff) marker = input.readUnsignedByte()
-            if (marker == 0xda || marker == 0xd9) return@use false
-            if (marker in 0xd0..0xd7 || marker == 0x01) continue
-            val length = input.readUnsignedShort()
-            require(length >= 2 && input.filePointer + length - 2 <= input.length())
-            if (marker in setOf(0xe1, 0xe2, 0xed, 0xfe)) return@use true
-            input.seek(input.filePointer + length - 2)
+    /** Check the complete fresh baseline JPEG, including scan bytes and its exact end. */
+    fun hasPrivateMetadata(file: File): Boolean = runCatching {
+        val sink = object : OutputStream() {
+            override fun write(value: Int) = Unit
+            override fun write(bytes: ByteArray, offset: Int, length: Int) = Unit
         }
-        error("Incomplete JPEG header")
-    }
+        FreshJpeg.copyWithoutMetadata(file, sink).isNotEmpty()
+    }.getOrDefault(true) // Unsupported or malformed reviewed copies must also block export.
 }
 
 object MaterialExporter {

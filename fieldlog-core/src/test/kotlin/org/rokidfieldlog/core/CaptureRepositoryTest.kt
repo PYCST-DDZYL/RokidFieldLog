@@ -76,6 +76,104 @@ class CaptureRepositoryTest {
         assertTrue(error.message!!.contains("16 MiB"))
         assertEquals(oversized.size.toLong(), photo(stamp.photoId).length())
     }
+
+    @Test fun moreThanOneHundredPhotosTransferInCompleteReimportableBatches() {
+        val decoder = ImageInspector { file -> javax.imageio.ImageIO.read(file)?.let { it.width to it.height } }
+        val repo = repository(images = decoder)
+        val image = java.awt.image.BufferedImage(32, 24, java.awt.image.BufferedImage.TYPE_INT_RGB)
+        val ids = (1..101).map {
+            val stamp = stamp()
+            val pending = repo.begin(stamp)
+            check(javax.imageio.ImageIO.write(image, "jpg", pending))
+            repo.finish(stamp, pending, null)
+            stamp.photoId
+        }
+        val before = ids.associateWith { storage.read(it) }
+        val outputs = mutableListOf<java.io.ByteArrayOutputStream>()
+        assertEquals(listOf(100, 1), repo.writePackages { index, total ->
+            assertEquals(2, total); assertEquals(outputs.size, index)
+            java.io.ByteArrayOutputStream().also(outputs::add)
+        })
+        val library = OfflineLibrary(temporary.newFolder("phone-batches"), object : AtomicTextFiles {
+            override fun read(file: File) = file.readText()
+            override fun write(file: File, text: String) { file.parentFile.mkdirs(); file.writeText(text) }
+        }, decoder, clock)
+        val transferred = outputs.flatMap { output ->
+            val bytes = output.toByteArray()
+            val imported = library.importPackage(java.io.ByteArrayInputStream(bytes))
+            assertEquals(imported.photoIds, library.importPackage(java.io.ByteArrayInputStream(bytes)).photoIds)
+            imported.photoIds
+        }
+        assertEquals(ids.toSet(), transferred.toSet()); assertEquals(101, transferred.size)
+        assertEquals(101, library.list().size)
+        assertEquals(before, ids.associateWith { storage.read(it) })
+        for (id in ids) assertEquals(PhotoDigest.sha256(photo(id)), PhotoDigest.sha256(library.load(id).original))
+        assertThrows(java.io.IOException::class.java) {
+            repo.writePackages { index, _ ->
+                if (index == 1) throw java.io.IOException("SYNTHETIC second output failure")
+                java.io.ByteArrayOutputStream()
+            }
+        }
+        assertEquals(before, ids.associateWith { storage.read(it) })
+        assertTrue(ids.all { photo(it).isFile })
+    }
+
+    @Test fun byteLimitIncludesTheManifestAndSplitsBeforeAnUnreadableBoundaryPackage() {
+        // Sparse synthetic JPEG-marker fixtures exercise byte limits only, not image decoding.
+        val repo = repository(images = ImageInspector { _ -> 16 to 16 })
+        val ids = (1..16).map {
+            val id = UUID.randomUUID().toString()
+            photo(id).parentFile.mkdirs()
+            java.io.RandomAccessFile(photo(id), "rw").use { output ->
+                output.setLength(CapturePackage.MAX_PHOTO_BYTES)
+                output.writeShort(0xffd8); output.seek(output.length() - 2); output.writeShort(0xffd9)
+            }
+            storage.write(id, CaptureRecordCodec.encode(RecordDocument(CaptureRecord.pending(id, null).copy(
+                width = 16, height = 16, photoSha256 = PhotoDigest.sha256(photo(id))))))
+            id
+        }
+        val metadataBytes = ids.sumOf { CaptureRecordCodec.encode(record(it)).toByteArray(Charsets.UTF_8).size.toLong() }
+        val last = photo(ids.last())
+        java.io.RandomAccessFile(last, "rw").use { output ->
+            output.setLength(output.length() - metadataBytes)
+            output.seek(output.length() - 2); output.writeShort(0xffd9)
+        }
+        val document = record(ids.last())
+        storage.write(ids.last(), CaptureRecordCodec.encode(document.copy(record = document.record.copy(photoSha256 = PhotoDigest.sha256(last)))))
+        assertEquals(CapturePackage.MAX_TOTAL_BYTES, ids.sumOf {
+            photo(it).length() + CaptureRecordCodec.encode(record(it)).toByteArray(Charsets.UTF_8).size
+        })
+        val single = java.io.ByteArrayOutputStream()
+        assertThrows(IllegalArgumentException::class.java) { repo.writePackage(single) }
+        assertEquals(0, single.size())
+        val outputs = mutableListOf<java.io.ByteArrayOutputStream>()
+        assertEquals(listOf(15, 1), repo.writePackages { _, total ->
+            assertEquals(2, total); java.io.ByteArrayOutputStream().also(outputs::add)
+        })
+        for (output in outputs) {
+            var total = 0L
+            java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(output.toByteArray())).use { zip ->
+                val buffer = ByteArray(64 * 1024)
+                while (zip.nextEntry != null) {
+                    while (true) { val count = zip.read(buffer); if (count < 0) break; total += count }
+                }
+            }
+            assertTrue(total <= CapturePackage.MAX_TOTAL_BYTES)
+        }
+        assertTrue(ids.all { photo(it).isFile })
+    }
+
+    @Test fun corruptOriginalBlocksEveryBatchBeforeOpeningAnyOutput() {
+        val repo = repository(images = ImageInspector { _ -> 16 to 16 })
+        val saved = save(repo)
+        photo(saved.photoId).writeBytes(byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0, 0xff.toByte(), 0xd9.toByte()))
+        val before = storage.read(saved.photoId)
+        var opened = false
+        assertThrows(IllegalArgumentException::class.java) { repo.writePackages { _, _ ->
+            opened = true; java.io.ByteArrayOutputStream()
+        } }
+        assertFalse(opened); assertEquals(before, storage.read(saved.photoId)); assertTrue(photo(saved.photoId).isFile)
+    }
     @Test fun unchangedColdStartSkipsDecodeAndDoesNotRewriteRecord() {
         val saved = save()
         val original = storage.read(saved.photoId)

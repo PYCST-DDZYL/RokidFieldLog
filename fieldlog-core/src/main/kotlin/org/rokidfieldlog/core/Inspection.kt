@@ -76,10 +76,25 @@ object InspectionCodec {
     fun encode(issue: TrackedIssue): String = gson.toJson(issue)
     fun decode(text: String, expectedId: String): TrackedIssue {
         require(text.toByteArray(Charsets.UTF_8).size <= MAX_BYTES)
-        val tree = gson.fromJson(text, JsonObject::class.java) ?: error("Missing issue")
+        val tree = RecordJson.objectValue(text, MAX_BYTES)
         require(tree.has("schemaVersion") && tree.has("isSynthetic") && tree.has("category"))
         require(tree.keySet().all { it in issueFields }) { "问题历史含尚不支持的字段，原文件保留" }
-        tree.getAsJsonArray("events")?.forEach { event -> require(event.asJsonObject.keySet().all { it in eventFields }) }
+        RecordJson.integer(tree["schemaVersion"], Int.MAX_VALUE.toLong())
+        require(tree["schemaVersion"].toString() == "1") { "尚不支持此问题历史版本，原文件保留" }
+        RecordJson.integer(tree["revision"])
+        strings(tree, false, "issueId", "siteLabel", "category")
+        booleans(tree, "isSynthetic")
+        val events = tree["events"]
+        require(events != null && events.isJsonArray && events.asJsonArray.size() in 1..MAX_EVENTS)
+        events.asJsonArray.forEach { value ->
+            require(value.isJsonObject && value.asJsonObject.keySet().all { it in eventFields })
+            val event = value.asJsonObject
+            RecordJson.integer(event["sequence"], Int.MAX_VALUE.toLong())
+            event["recordedAtUtcMillis"]?.let { RecordJson.integer(it) }
+            strings(event, false, "eventId", "kind", "note")
+            strings(event, true, "photoId", "photoSha256", "observedOn", "visibility", "finding", "basedOnObservationId", "decision")
+            booleans(event, "sameSiteConfirmed", "chronologyConfirmed")
+        }
         val issue = gson.fromJson(tree, TrackedIssue::class.java)
         require(issue.schemaVersion == 1 && CaptureFiles.validId(expectedId) && issue.issueId == expectedId)
         requireNotNull(issue.category); requireNotNull(issue.siteLabel); requireNotNull(issue.events)
@@ -127,6 +142,16 @@ object InspectionCodec {
             prior += event
         }
         return issue
+    }
+    private fun strings(tree: JsonObject, nullable: Boolean, vararg keys: String) {
+        for (key in keys) tree[key]?.let {
+            require(nullable && it.isJsonNull || it.isJsonPrimitive && it.asJsonPrimitive.isString) { "问题历史文字字段类型异常，原文件保留" }
+        }
+    }
+    private fun booleans(tree: JsonObject, vararg keys: String) {
+        for (key in keys) tree[key]?.let {
+            require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) { "问题历史确认必须为布尔值，原文件保留" }
+        }
     }
     private fun requireNoPhoto(event: InspectionEvent) {
         require(event.photoId == null && event.photoSha256 == null && event.observedOn == null &&

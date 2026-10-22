@@ -85,21 +85,32 @@ class PrivateCaptureStore(private val context: Context, rootOverride: File? = nu
     fun latestSaved(): SavedCapture? = repository.latestSaved()
     fun deleteCapture(photoId: String) = repository.deleteCapture(photoId)
     /** Public USB-transfer file; MediaStore pending rows are removed on failure. Originals are unredacted. */
-    fun exportPackage(): Pair<String, Int> {
-        val name = "FieldLog_capture_" + System.currentTimeMillis() + ".zip"
-        val values = android.content.ContentValues().apply {
-            put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
-            put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/zip")
-            put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/FieldLog")
-            put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
-        }
+    fun exportPackages(): Pair<List<String>, Int> {
+        val prefix = "FieldLog_capture_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().take(8)
         val resolver = context.contentResolver
-        val uri = checkNotNull(resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)) { "下载目录不可写" }
+        val outputs = mutableListOf<Pair<android.net.Uri, String>>()
         try {
-            val count = checkNotNull(resolver.openOutputStream(uri, "w")).use { repository.writePackage(it) }
-            check(resolver.update(uri, android.content.ContentValues().apply { put(android.provider.MediaStore.Downloads.IS_PENDING, 0) }, null, null) == 1)
-            return name to count
-        } catch (error: Exception) { runCatching { resolver.delete(uri, null, null) }; throw error }
+            val counts = repository.writePackages { index, total ->
+                val name = prefix + (if (total == 1) "" else "_" + (index + 1).toString().padStart(3, '0') + "of" + total) + ".zip"
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/zip")
+                    put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/FieldLog")
+                    put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = checkNotNull(resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)) { "下载目录不可写" }
+                outputs += uri to name
+                checkNotNull(resolver.openOutputStream(uri, "w")) { "采集包不可写" }
+            }
+            for ((uri, _) in outputs) check(resolver.update(uri, android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.IS_PENDING, 0)
+            }, null, null) == 1) { "采集包发布未完成" }
+            return outputs.map { it.second } to counts.sum()
+        } catch (error: Exception) {
+            val cleaned = outputs.map { (uri, _) -> runCatching { resolver.delete(uri, null, null) == 1 }.getOrDefault(false) }
+            if (cleaned.any { !it }) throw IllegalStateException("导出未完成，部分下载文件未能清理，请检查Download/FieldLog；原照片保留", error)
+            throw error
+        }
     }
 
     fun deleteAllProjectData() {

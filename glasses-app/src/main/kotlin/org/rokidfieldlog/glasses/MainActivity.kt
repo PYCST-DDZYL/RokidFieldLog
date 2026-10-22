@@ -331,16 +331,16 @@ class MainActivity : ComponentActivity() {
         if (capturing || managing || recovering) { showStatus("请等待保存和后台检查完成", 3_000); return }
         handler.removeCallbacks(hidePanel)
         AlertDialog.Builder(this).setTitle("导出原始采集包？")
-            .setMessage("包含本机已验证的原图及采集记录，尚未打码。将保存到 Download/FieldLog，通过USB复制到手机后用首页‘导入采集包’打开。下载目录中的副本需自行删除。")
+            .setMessage("包含本机已验证的原图及采集记录，尚未打码。超过100张或256 MiB会自动生成多个包。将保存到 Download/FieldLog，通过USB复制到手机后逐包导入。下载目录中的副本需自行删除。")
             .setNegativeButton("取消", null).setPositiveButton("生成采集包") { _, _ ->
                 managing = true; showStatus("正在生成采集包…")
                 fileExecutor.execute {
-                    val result = runCatching { store.exportPackage() }
+                    val result = runCatching { store.exportPackages() }
                     runOnUiThread {
                         managing = false
-                        if (!isDestroyed && !isFinishing) result.fold({ (name, count) ->
-                            showStatus("已导出 " + count + " 张 · Download/FieldLog")
-                            AlertDialog.Builder(this).setTitle("采集包已生成").setMessage("Download/FieldLog/" + name + "\nUSB复制到手机，在FieldLog首页导入，再点‘用这批照片新建材料’。原图尚未打码，请在手机逐张审阅。")
+                        if (!isDestroyed && !isFinishing) result.fold({ (names, count) ->
+                            showStatus("已导出 " + count + " 张 · " + names.size + " 个包 · Download/FieldLog")
+                            AlertDialog.Builder(this).setTitle("采集包已生成").setMessage(names.joinToString("\n") { "Download/FieldLog/" + it } + "\nUSB复制全部采集包到手机，在FieldLog首页逐包导入，再加入对应材料。原图尚未打码，请在手机逐张审阅。")
                                 .setPositiveButton("知道了", null).show()
                         }, { showStatus(it.message ?: "导出失败，原照片保留") })
                     }

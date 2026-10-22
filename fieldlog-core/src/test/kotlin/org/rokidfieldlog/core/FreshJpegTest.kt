@@ -84,4 +84,31 @@ class FreshJpegTest {
         assertNotNull(ImageIO.read(source))
         assertThrows(IllegalArgumentException::class.java) { FreshJpeg.copyWithoutMetadata(source, ByteArrayOutputStream()) }
     }
+
+    @Test fun outgoingPrivacyCheckRejectsPostScanMetadataAndUnrecognizedAppSegments() {
+        val clean = jpeg().readBytes()
+        for (bytes in listOf(
+            clean.dropLast(2).toByteArray() + segment(0xfe, "SYNTHETIC_POST_SCAN".toByteArray()) + clean.takeLast(2).toByteArray(),
+            clean + "SYNTHETIC_TRAILING_SECRET".toByteArray() + clean.takeLast(2).toByteArray(),
+            clean.take(2).toByteArray() + segment(0xe3, "SYNTHETIC_APP_SECRET".toByteArray()) + clean.drop(2).toByteArray(),
+            clean.take(2).toByteArray() + segment(0xe0, "SYNTHETIC_THUMBNAIL".toByteArray()) + clean.drop(2).toByteArray())) {
+            val source = temp.newFile(); source.writeBytes(bytes)
+            val unsafe = runCatching { JpegPrivacy.hasPrivateMetadata(source) }.getOrElse { true }
+            assertTrue("Outgoing JPEG must reject hidden or unexamined bytes", unsafe)
+        }
+    }
+
+    @Test fun appZeroThumbnailsAreRemovedWithoutChangingTheReviewedPixels() {
+        val clean = jpeg().readBytes()
+        val jfifWithThumbnail = byteArrayOf(0x4a, 0x46, 0x49, 0x46, 0, 1, 2, 0, 0, 1, 0, 1, 1, 1, 1, 2, 3)
+        val source = temp.newFile().apply {
+            writeBytes(clean.take(2).toByteArray() + segment(0xe0, jfifWithThumbnail) + clean.drop(2).toByteArray())
+        }
+        val before = PhotoDigest.sha256(source)
+        val target = temp.newFile()
+        assertEquals(setOf(0xe0), target.outputStream().use { FreshJpeg.copyWithoutMetadata(source, it) })
+        assertArrayEquals(clean, target.readBytes())
+        assertEquals(before, PhotoDigest.sha256(source))
+        assertFalse(JpegPrivacy.hasPrivateMetadata(target))
+    }
 }

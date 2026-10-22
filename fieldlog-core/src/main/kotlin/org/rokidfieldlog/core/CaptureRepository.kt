@@ -217,6 +217,44 @@ class CaptureRepository(
 
     /** Snapshot is held against capture/delete/recovery while the original archive is written. */
     fun writePackage(output: java.io.OutputStream): Int = state.lifecycle.write {
+        val captures = packageCaptures()
+        require(captures.size <= CapturePackage.MAX_RECORDS) { "单包最多100张，请使用自动分包转存" }
+        val totalBytes = CapturePackage.manifestBytes(captures.size).size + captures.sumOf(::packageEntryBytes)
+        require(totalBytes <= CapturePackage.MAX_TOTAL_BYTES) { "单包超过256 MiB，请使用自动分包转存；原照片保留" }
+        CapturePackage.write(output, captures)
+        captures.size
+    }
+
+    /** Validate all originals before opening outputs. The adapter owns cleanup if any output fails. */
+    fun writePackages(openOutput: (index: Int, total: Int) -> java.io.OutputStream): List<Int> = state.lifecycle.write {
+        val captures = packageCaptures()
+        val batches = mutableListOf<MutableList<IncomingCapture>>()
+        val manifestBudget = CapturePackage.manifestBytes(CapturePackage.MAX_RECORDS).size.toLong()
+        var bytes = manifestBudget
+        for (capture in captures) {
+            val size = packageEntryBytes(capture)
+            require(size + manifestBudget <= CapturePackage.MAX_TOTAL_BYTES) { "单张记录超过采集包限制，原照片保留" }
+            if (batches.isEmpty() || batches.last().size == CapturePackage.MAX_RECORDS || bytes + size > CapturePackage.MAX_TOTAL_BYTES) {
+                batches += mutableListOf<IncomingCapture>()
+                bytes = manifestBudget
+            }
+            batches.last() += capture
+            bytes += size
+        }
+        batches.mapIndexed { index, batch ->
+            openOutput(index, batches.size).use { CapturePackage.write(it, batch) }
+            batch.size
+        }
+    }
+
+    private fun packageEntryBytes(capture: IncomingCapture): Long {
+        val metadataBytes = CaptureRecordCodec.encode(capture.document).toByteArray(Charsets.UTF_8).size
+        require(metadataBytes <= CapturePackage.MAX_JSON_BYTES) { "采集记录过大，原文件保留" }
+        return capture.photo.length() + metadataBytes
+    }
+
+    /** Caller holds the lifecycle write lock until every archive stream has closed. */
+    private fun packageCaptures(): List<IncomingCapture> {
         check(state.active.isEmpty()) { "请等待照片保存后再导出" }
         val captures = records.ids().sorted().mapNotNull { id ->
             val document = records.read(id)?.let(CaptureRecordCodec::decode) ?: return@mapNotNull null
@@ -232,12 +270,7 @@ class CaptureRepository(
             IncomingCapture(document, photo, hash)
         }
         require(captures.isNotEmpty()) { "暂无可导出的已验证照片" }
-        require(captures.size <= CapturePackage.MAX_RECORDS) { "采集包最多100张，请先分批转存" }
-        // CapturePackage enforces the same limit mid-stream; report it before writing a partial archive.
-        val totalBytes = captures.sumOf { it.photo.length() + CaptureRecordCodec.encode(it.document).toByteArray(Charsets.UTF_8).size }
-        require(totalBytes <= CapturePackage.MAX_TOTAL_BYTES) { "采集包超过256 MiB，未导出；原照片保留" }
-        CapturePackage.write(output, captures)
-        captures.size
+        return captures
     }
 
     /** Caller selects the ID shown in the review dialog, so a later shot cannot change the target. */

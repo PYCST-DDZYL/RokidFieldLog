@@ -78,7 +78,7 @@ object DraftCodec {
         .create()
     fun encode(draft: IssueDraft): String = gson.toJson(draft)
     fun decode(text: String, expectedId: String): IssueDraft {
-        val tree = gson.fromJson(text, JsonObject::class.java) ?: error("Missing draft")
+        val tree = RecordJson.objectValue(text, InspectionCodec.MAX_BYTES)
         require(tree.keySet().all { it in fields }) { "草稿含未知字段，原文件保留" }
         strings(tree, "photoId", "address", "description", "eventDate", "stage", "receipt")
         booleans(tree, "addressConfirmed", "isSynthetic")

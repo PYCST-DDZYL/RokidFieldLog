@@ -163,8 +163,7 @@ object CaptureRecordCodec {
         gson.fromJson(reference, PhotographerReference::class.java).also { it.validate() }
     }.getOrNull()
 
-    private fun parse(text: String): JsonObject = gson.fromJson(text, JsonObject::class.java)
-        ?: throw IllegalArgumentException("Missing JSON object")
+    private fun parse(text: String): JsonObject = RecordJson.objectValue(text, 256 * 1024)
 
     fun decode(text: String): RecordDocument = decodeObject(parse(text))
 

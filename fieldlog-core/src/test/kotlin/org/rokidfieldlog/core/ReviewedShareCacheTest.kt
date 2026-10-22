@@ -62,6 +62,23 @@ class ReviewedShareCacheTest {
         assertTrue(original.isFile); assertTrue(root.listFiles()!!.isEmpty())
     }
 
+    @Test fun hiddenPostScanAndAppDataAreBlockedEvenWithMatchingHashes() {
+        val existing = prepare()
+        for (afterScan in listOf(false, true)) {
+            val source = attachment()
+            val bytes = source.file.readBytes()
+            val metadata = byteArrayOf(0xff.toByte(), 0xe3.toByte(), 0, 8) + "SECRET".toByteArray()
+            source.file.writeBytes(if (afterScan) bytes.dropLast(2).toByteArray() + metadata + bytes.takeLast(2).toByteArray()
+                else bytes.take(2).toByteArray() + metadata + bytes.drop(2).toByteArray())
+            assertThrows(IllegalArgumentException::class.java) {
+                cache.prepare("SYNTHETIC", listOf(attachment(), source.copy(sha256 = PhotoDigest.sha256(source.file))))
+            }
+            assertEquals(listOf(existing.directory), root.listFiles()!!.toList())
+            assertTrue(source.file.isFile)
+            assertTrue(existing.photos.all { it.isFile })
+        }
+    }
+
     @Test fun cleanupRetainsRecentSharesUntilTheDocumentedDeadline() {
         val old = prepare()
         now += ReviewedShareCache.RETENTION_MILLIS - 1

@@ -28,6 +28,15 @@ object FreshJpeg {
                 continue
             }
             val payload = ByteArray(length - 2); input.readFully(payload)
+            // APP0 may contain an unreviewed JFXX thumbnail or arbitrary private data.
+            // Keep only the fixed JFIF header with no embedded thumbnail.
+            if (marker == 0xe0 && !(payload.size == 14 && payload.take(5).toByteArray().contentEquals(
+                    byteArrayOf(0x4a, 0x46, 0x49, 0x46, 0)) && payload[5] == 1.toByte() &&
+                    (payload[6].toInt() and 0xff) in 0..2 && (payload[7].toInt() and 0xff) in 0..2 &&
+                    payload[12] == 0.toByte() && payload[13] == 0.toByte())) {
+                removed += marker
+                continue
+            }
             output.write(byteArrayOf(0xff.toByte(), marker.toByte(), (length shr 8).toByte(), length.toByte()))
             output.write(payload)
             if (marker == 0xda) {
