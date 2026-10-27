@@ -59,7 +59,7 @@ class MainActivity : Activity() {
         content.addView(OfflineUi.button(this, "报修材料（继续草稿 / 新建）") { if (!busy) startActivity(Intent(this, ReportActivity::class.java)) })
         content.addView(OfflineUi.text(this, "4. 记下回执，下次路过再复查", 19f))
         content.addView(OfflineUi.button(this, "问题历史与待复查清单") { if (!busy) startActivity(Intent(this, InspectionActivity::class.java)) })
-        content.addView(OfflineUi.button(this, "更多：资料检查、演示与定位") { if (!busy) showTools() })
+        content.addView(OfflineUi.button(this, "更多：资料检查、试点与演示") { if (!busy) showTools() })
         draftsOnly = CheckBox(this).apply {
             text = "仅显示照片未审阅的记录"
             isChecked = savedInstanceState?.getBoolean("draftsOnly", false) ?: false
@@ -82,6 +82,14 @@ class MainActivity : Activity() {
     private fun showTools() {
         val box = OfflineUi.column(this)
         box.addView(OfflineUi.button(this, "检查本机资料完整性") { if (!busy) checkLibraryHealth() })
+        box.addView(OfflineUi.button(this, "查看试点记录概览") {
+            if (!busy) task("正在汇总本机人工试交记录…", { PilotMetrics.summarize(store.reports.scan()) }) { summary ->
+                AlertDialog.Builder(this).setTitle("试点记录概览").setMessage(summary.text())
+                    .setNegativeButton("关闭", null).setPositiveButton("去填写回执与试交记录") { _, _ ->
+                        startActivity(Intent(this, ReportActivity::class.java))
+                    }.show()
+            }
+        })
         box.addView(OfflineUi.button(this, "载入复查流程演示") {
             if (!busy) AlertDialog.Builder(this).setTitle("载入合成复查演示？")
                 .setMessage("生成破损、遮挡、处理后共三张合成图片。问题先停在待复查；第三张供你练习关联和人工确认。")
