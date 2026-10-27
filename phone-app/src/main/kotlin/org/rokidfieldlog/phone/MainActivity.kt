@@ -59,14 +59,14 @@ class MainActivity : Activity() {
         content.addView(OfflineUi.button(this, "报修材料（继续草稿 / 新建）") { if (!busy) startActivity(Intent(this, ReportActivity::class.java)) })
         content.addView(OfflineUi.text(this, "4. 记下回执，下次路过再复查", 19f))
         content.addView(OfflineUi.button(this, "问题历史与待复查清单") { if (!busy) startActivity(Intent(this, InspectionActivity::class.java)) })
-        content.addView(OfflineUi.button(this, "更多：演示与定位检查") { if (!busy) showTools() })
+        content.addView(OfflineUi.button(this, "更多：资料检查、演示与定位") { if (!busy) showTools() })
         draftsOnly = CheckBox(this).apply {
             text = "仅显示照片未审阅的记录"
             isChecked = savedInstanceState?.getBoolean("draftsOnly", false) ?: false
             setOnCheckedChangeListener { _, _ -> page = 0; renderEntries() }
         }
         content.addView(draftsOnly)
-        search = OfflineUi.field(this, "搜索地址、说明或类别")
+        search = OfflineUi.field(this, "搜索地址、说明、类别或记录编号")
         search.setText(savedInstanceState?.getString("query", "") ?: "")
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -81,6 +81,7 @@ class MainActivity : Activity() {
 
     private fun showTools() {
         val box = OfflineUi.column(this)
+        box.addView(OfflineUi.button(this, "检查本机资料完整性") { if (!busy) checkLibraryHealth() })
         box.addView(OfflineUi.button(this, "载入复查流程演示") {
             if (!busy) AlertDialog.Builder(this).setTitle("载入合成复查演示？")
                 .setMessage("生成破损、遮挡、处理后共三张合成图片。问题先停在待复查；第三张供你练习关联和人工确认。")
@@ -108,7 +109,20 @@ class MainActivity : Activity() {
                 }.show()
         })
 
-        AlertDialog.Builder(this).setTitle("演示与定位工具").setView(ScrollView(this).apply { addView(box) }).setNegativeButton("关闭", null).show()
+        AlertDialog.Builder(this).setTitle("资料检查与工具").setView(ScrollView(this).apply { addView(box) }).setNegativeButton("关闭", null).show()
+    }
+    private fun checkLibraryHealth() {
+        task("正在检查原图、审阅副本和记录；照片较多时请稍候…", {
+            Triple(LibraryHealthCheck(store.library, store.inspector).check(), store.reports.scan(), store.inspections.scan())
+        }) { (photos, materials, histories) ->
+            val details = photos.issues.take(20).joinToString("\n") { "#" + it.photoId.take(8) + "：" + it.problem.label }
+            val text = photos.summary() + "\n材料草稿：" + materials.reports.size + "，不可读：" + materials.unreadableCount +
+                "\n问题历史：" + histories.issues.size + "，不可读：" + histories.unreadableCount +
+                (if (details.isBlank()) "" else "\n\n" + details) +
+                (if (photos.issues.size > 20) "\n另有更多异常，请保留原始资料后逐项核查。" else "") +
+                "\n\n检查不会删除或修复原文件。可在首页搜索记录编号。文件一致性不证明照片内容、位置或政府受理。"
+            AlertDialog.Builder(this).setTitle("本机资料检查结果").setMessage(text).setPositiveButton("知道了", null).show()
+        }
     }
     private fun importComplete(report: ImportReport, message: String) {
         batchIds = report.photoIds; renderBatch(); refresh(message) { if (batchIds.isNotEmpty()) chooseTargetReport() }
@@ -225,6 +239,7 @@ class MainActivity : Activity() {
             }
             status.text = (message?.let { it + "\n" } ?: "") + "本机共 " + entries.size + " 条记录。可选择手机 JPEG 或导入采集包。"
             if (loaded.unreadableCount > 0) status.append("\n有 " + loaded.unreadableCount + " 条记录无法读取，原文件已保留。")
+            if (materials.unreadableCount > 0) status.append("\n有 " + materials.unreadableCount + " 份材料无法读取，原文件已保留。")
             renderEntries(); after?.invoke()
         }
     }
@@ -233,7 +248,7 @@ class MainActivity : Activity() {
         records.removeAllViews()
         val query = search.text.toString().trim()
         val shown = entries.filter { (!draftsOnly.isChecked || it.draft.photoReview == null) &&
-            (query.isEmpty() || (it.draft.address + it.draft.description + MaterialExporter.categoryLabel(it.draft.category)).contains(query, ignoreCase = true)) }
+            (query.isEmpty() || (it.draft.photoId + " " + it.draft.address + it.draft.description + MaterialExporter.categoryLabel(it.draft.category)).contains(query, ignoreCase = true)) }
         val pages = ((shown.size + 19) / 20).coerceAtLeast(1)
         page = page.coerceIn(0, pages - 1)
         records.addView(OfflineUi.text(this, "匹配 " + shown.size + " 条 · 第 " + (page + 1) + " / " + pages + " 页"))
@@ -242,6 +257,7 @@ class MainActivity : Activity() {
             val draft = entry.draft
             val card = OfflineUi.card(this)
             card.addView(OfflineUi.text(this, (if (draft.isSynthetic) "[合成演示] " else "") + MaterialExporter.categoryLabel(draft.category), 20f))
+            card.addView(OfflineUi.text(this, "记录 #" + draft.photoId.take(8)))
             card.addView(OfflineUi.text(this, draft.address.ifBlank { "问题地址待确认" }))
             if (entry.source.record.captureTimeSource == "UNKNOWN_SELECTED_PHOTO") card.addView(OfflineUi.text(this, "手机选入 · 原始拍摄时间和位置未知"))
             card.addView(OfflineUi.text(this, OfflineUi.stage(draft.stage) + " · " + if (draft.photoReview == null) "照片未审阅" else "照片已审阅"))
