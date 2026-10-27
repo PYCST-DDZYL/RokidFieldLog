@@ -70,10 +70,10 @@ Linux/macOS 配置 `ANDROID_HOME` 或 `local.properties` 后：
 Windows 准备项目内工具后：
 
 ```powershell
-.\scripts\Build.ps1 -Verify -Clean
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Build.ps1 -Verify -Clean
 ```
 
-两端 APK 在各模块 `build/outputs/apk/debug/`。Windows 校验脚本另检查实际 APK 的包名、必需类和手机分享权限边界。Linux Actions 自动测试、构建、Lint，并上传 APK、测试报告及明确标记的合成样例。
+该命令仅为本次 PowerShell 进程设置执行策略，不修改永久系统配置。两端 APK 在各模块 `build/outputs/apk/debug/`。Windows 校验脚本另检查实际 APK 的包名、必需类和手机分享权限边界。Actions 的 Linux 任务自动测试、构建和 Lint，并上传 APK、测试报告及合成样例；独立 Windows 任务检查项目操作互斥。
 
 完整安装、设备授权与清理步骤见 [安装指南](docs/install.md)。旧的 [Phase 1 Preview 2 Release](https://github.com/PYCST-DDZYL/RokidFieldLog/releases/tag/v0.1.0-preview.2) 不含当前手机整理功能；使用当前源码或 Actions 构建产物。
 

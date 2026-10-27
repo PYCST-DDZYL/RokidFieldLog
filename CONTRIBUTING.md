@@ -14,7 +14,7 @@ Keep hardware evidence distinct from unit tests and synthetic fixtures. Offline 
 
 ## Check changes
 
-GitHub Actions runs the shared tests, both APK builds and Android Lint on Ubuntu. With JDK 21 and Android SDK 36 configured, Linux/macOS contributors can run:
+GitHub Actions runs the shared tests, both APK builds and Android Lint on Ubuntu. A separate Windows job verifies cross-process operation locking with Windows PowerShell 5.1, without a device, release key or Android SDK. With JDK 21 and Android SDK 36 configured, Linux/macOS contributors can run:
 
 ~~~sh
 ./gradlew --no-daemon :fieldlog-core:test assembleDebug lintDebug
@@ -22,7 +22,8 @@ GitHub Actions runs the shared tests, both APK builds and Android Lint on Ubuntu
 
 
 ```powershell
-.\scripts\Build.ps1 -Verify -Clean
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-ProjectOperationLock.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Build.ps1 -Verify -Clean
 # Only after device-test authorization:
 .\scripts\Test-StorageRecovery.ps1 -ConfirmDeviceTest
 ```
@@ -35,7 +36,7 @@ Report what was tested, device model/API without serial, actual results, and rem
 git add README.md LICENSE CONTRIBUTING.md .gitignore
 # Stage the intended source changes, then inspect them:
 git diff --cached --stat
-.\scripts\Test-PublishSafety.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-PublishSafety.ps1
 ```
 
 The staged-file check rejects generated/private paths, photos, journals, probe snapshots, keys, unexpected binaries, and recognizable secrets. It also checks ignore rules. It is an additional guard, not a guarantee that every possible personal identifier is detectable. Review the staged diff yourself. Keep real evidence under ignored `.local/`; use clearly synthetic fixture values in tests. Never paste tokens, device serials, personal GPS, real photos, or raw device logs into commits or issues.
