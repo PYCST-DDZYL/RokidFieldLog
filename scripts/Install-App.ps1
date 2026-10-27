@@ -5,6 +5,10 @@
     [switch]$Release
 )
 if (!$ConfirmInstallation) { throw '设备安装须经用户明确授权，确认后使用 -ConfirmInstallation。' }
+$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Enter-ProjectOperationLock.ps1')
+$operationLock = Enter-ProjectOperationLock -Root (Join-Path $PSScriptRoot '..')
+try {
 . (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
 . (Join-Path $PSScriptRoot 'Get-ProjectBuildInputFingerprint.ps1')
 $adbExecutable = Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe'
@@ -57,3 +61,4 @@ try {
         if ($appProcess -notmatch '^\d+(\s+\d+)*$') { throw 'App process exited after launch; inspect this package crash before continuing.' }
     }
 } finally { Pop-Location }
+} finally { $operationLock.Dispose() }

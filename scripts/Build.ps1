@@ -1,4 +1,8 @@
 ﻿param([switch]$Verify, [switch]$Clean, [switch]$Release)
+$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Enter-ProjectOperationLock.ps1')
+$operationLock = Enter-ProjectOperationLock -Root (Join-Path $PSScriptRoot '..')
+try {
 . (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
 . (Join-Path $PSScriptRoot 'Get-ProjectBuildInputFingerprint.ps1')
 if (!(Test-Path -LiteralPath "$env:JAVA_HOME\bin\java.exe")) { throw 'Project JDK is missing. Prepare development tools first.' }
@@ -28,3 +32,4 @@ try {
     [IO.File]::WriteAllText($receiptPath, (@{status='VERIFIED';variant=$variant;inputFingerprint=$inputFingerprint;apkHashes=$apkHashes} | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
     Write-Output 'Build inputs unchanged; verified APK receipt saved privately.'
 } finally { Pop-Location }
+} finally { $operationLock.Dispose() }
