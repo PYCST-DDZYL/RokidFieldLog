@@ -25,7 +25,7 @@ class CaptureRecordTest {
     }
 
     @Test fun unknownTopLevelAndNestedFieldsSurviveTypedRepair() {
-        val text = """{"schemaVersion":1,"photoId":"$id","futureNote":{"flag":true},"phoneLocation":{"latitude":12.3,"longitude":-45.6,"futureProviderNote":"fixture"}}"""
+        val text = """{"schemaVersion":1,"photoId":"$id","futureNote":{"flag":true},"phoneLocation":{"latitude":12.3,"longitude":-45.6,"coordinateSystem":"WGS84","isMock":false,"futureProviderNote":"fixture"}}"""
         val old = CaptureRecordCodec.decode(text)
         val encoded = CaptureRecordCodec.encode(old.copy(record = old.record.copy(captureState = CaptureState.RECOVERED)))
         assertTrue(encoded.contains("futureNote"))

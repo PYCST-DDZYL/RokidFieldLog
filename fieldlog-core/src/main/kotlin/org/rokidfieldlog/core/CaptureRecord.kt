@@ -177,6 +177,17 @@ object CaptureRecordCodec {
     private fun decodeObject(original: JsonObject): RecordDocument {
         requireVersion(original)
         require(original["photoId"]?.isJsonPrimitive == true && CaptureFiles.validId(original["photoId"].asString))
+        for (key in listOf("captureRequestedAtUtcMillis", "captureCompletedAtUtcMillis",
+            "captureRequestedElapsedRealtimeNanos", "captureCompletedElapsedRealtimeNanos",
+            "captureDurationMillis", "recoveredAtUtcMillis", "lastStorageCheckAtUtcMillis")) {
+            original[key]?.takeUnless { it.isJsonNull }?.let { RecordJson.integer(it) }
+        }
+        for (key in listOf("width", "height")) {
+            original[key]?.takeUnless { it.isJsonNull }?.let { RecordJson.integer(it, Int.MAX_VALUE.toLong()) }
+        }
+        original["issueCategoryNeedsReview"]?.let {
+            require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) { "采集分类确认字段类型异常，原文件保留" }
+        }
         for (key in listOf("phoneLocation", "issueLocation")) {
             val location = original[key]?.takeUnless { it.isJsonNull } ?: continue
             require(location.isJsonObject) { "Invalid location object" }
@@ -184,13 +195,34 @@ object CaptureRecordCodec {
                 val number = location.asJsonObject[axis]
                 require(number != null && number.isJsonPrimitive && number.asJsonPrimitive.isNumber) { "Missing coordinate" }
             }
+            if (key == "phoneLocation") {
+                val point = location.asJsonObject
+                val crs = point["coordinateSystem"]
+                require(crs != null && crs.isJsonPrimitive && crs.asJsonPrimitive.isString) { "拍摄者位置缺少坐标系，原文件保留" }
+                val mock = point["isMock"]
+                require(mock != null && mock.isJsonPrimitive && mock.asJsonPrimitive.isBoolean) { "拍摄者位置缺少有效模拟标记，原文件保留" }
+                point["accuracyMeters"]?.takeUnless { it.isJsonNull }?.let {
+                    require(it.isJsonPrimitive && it.asJsonPrimitive.isNumber) { "定位精度类型异常，原文件保留" }
+                }
+                for (time in listOf("locationTimeUtcMillis", "locationElapsedRealtimeNanos", "ageAtReceiptMillis")) {
+                    point[time]?.takeUnless { it.isJsonNull }?.let { RecordJson.integer(it) }
+                }
+                point["provider"]?.takeUnless { it.isJsonNull }?.let {
+                    require(it.isJsonPrimitive && it.asJsonPrimitive.isString) { "定位来源类型异常，原文件保留" }
+                }
+            }
         }
         val record = gson.fromJson(original, CaptureRecord::class.java)
         require(CaptureFiles.validId(record.photoId))
         requireNotNull(record.captureState)
         requireNotNull(record.photoIntegrityStatus)
         requireNotNull(record.issueCategorySource)
-        record.phoneLocation?.let { requireNotNull(it.coordinateSystem) }
+        record.phoneLocation?.let {
+            requireNotNull(it.coordinateSystem)
+            require(it.latitude.isFinite() && it.latitude in -90.0..90.0) { "拍摄者纬度超出范围，原文件保留" }
+            require(it.longitude.isFinite() && it.longitude in -180.0..180.0) { "拍摄者经度超出范围，原文件保留" }
+            require(it.accuracyMeters == null || it.accuracyMeters.isFinite() && it.accuracyMeters >= 0) { "定位精度无效，原文件保留" }
+        }
         record.issueLocation?.let { point ->
             require(point.latitude.isFinite() && point.latitude in -90.0..90.0)
             require(point.longitude.isFinite() && point.longitude in -180.0..180.0)
