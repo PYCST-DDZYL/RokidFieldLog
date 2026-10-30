@@ -14,7 +14,7 @@ Keep hardware evidence distinct from unit tests and synthetic fixtures. Offline 
 
 ## Check changes
 
-GitHub Actions runs the shared tests, both APK builds and Android Lint on Ubuntu. A separate Windows job verifies cross-process operation locking with Windows PowerShell 5.1, without a device, release key or Android SDK. With JDK 21 and Android SDK 36 configured, Linux/macOS contributors can run:
+GitHub Actions runs the shared tests, both APK builds and Android Lint on Ubuntu. A separate Windows job verifies cross-process operation locking and build-receipt control with Windows PowerShell 5.1, without a device, release key or Android SDK. Receipt fixtures test script behavior, not actual APK verification. With JDK 21 and Android SDK 36 configured, Linux/macOS contributors can run:
 
 ~~~sh
 ./gradlew --no-daemon :fieldlog-core:test assembleDebug lintDebug
@@ -23,6 +23,7 @@ GitHub Actions runs the shared tests, both APK builds and Android Lint on Ubuntu
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-ProjectOperationLock.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-ProjectBuildReceipt.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Build.ps1 -Verify -Clean
 # Only after device-test authorization:
 .\scripts\Test-StorageRecovery.ps1 -ConfirmDeviceTest

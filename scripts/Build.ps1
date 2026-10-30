@@ -15,7 +15,7 @@ try {
     $variant = $variantTask.ToLowerInvariant()
     $inputFingerprint = Get-ProjectBuildInputFingerprint -Root $projectRoot
     $receiptPath = Join-Path $localRoot ("verified-build-$variant.json")
-    [IO.File]::WriteAllText($receiptPath, (@{status='BUILDING';variant=$variant;inputFingerprint=$inputFingerprint} | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($receiptPath, (@{schemaVersion=2;status='BUILDING';variant=$variant;inputFingerprint=$inputFingerprint;checks=@()} | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
     # Windows PowerShell 5 treats redirected informational stderr as terminating
     # errors under Stop. Keep Gradle diagnostics and use its real exit code.
     $buildRun = Invoke-ProjectNativeCapture -Executable (Join-Path $projectRoot 'gradlew.bat') -NativeArguments $gradleArguments
@@ -29,7 +29,12 @@ try {
     foreach ($target in @('glasses','phone')) {
         $apkHashes[$target] = (Get-FileHash -LiteralPath (Join-Path $projectRoot "$target-app/build/outputs/apk/$variant/$target-app-$variant.apk") -Algorithm SHA256).Hash.ToLowerInvariant()
     }
-    [IO.File]::WriteAllText($receiptPath, (@{status='VERIFIED';variant=$variant;inputFingerprint=$inputFingerprint;apkHashes=$apkHashes} | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
-    Write-Output 'Build inputs unchanged; verified APK receipt saved privately.'
+    $checks = @('APK_CONTENT','BUILD_INPUTS')
+    if ($Release) { $checks += 'RELEASE_SIGNATURE' }
+    if ($Verify) { $checks += @('CORE_TESTS','ANDROID_LINT') }
+    $status = if ($Verify) { 'VERIFIED' } else { 'APK_VERIFIED' }
+    [IO.File]::WriteAllText($receiptPath, (@{schemaVersion=2;status=$status;variant=$variant;inputFingerprint=$inputFingerprint;apkHashes=$apkHashes;checks=$checks} | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+    Write-Output "Build inputs unchanged; private receipt status: $status."
+    if (!$Verify) { Write-Output 'Core tests and Android Lint were not requested. Run Build.ps1 -Verify before guarded installation.' }
 } finally { Pop-Location }
 } finally { $operationLock.Dispose() }

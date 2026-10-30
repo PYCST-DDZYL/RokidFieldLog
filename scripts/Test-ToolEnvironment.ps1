@@ -1,5 +1,6 @@
 ﻿. (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
 & (Join-Path $PSScriptRoot 'Test-ProjectOperationLock.ps1')
+& (Join-Path $PSScriptRoot 'Test-ProjectBuildReceipt.ps1')
 $javaExecutable = Join-Path $env:JAVA_HOME 'bin/java.exe'
 $versionRun = Invoke-ProjectNativeCapture -Executable $javaExecutable -NativeArguments @('-version')
 if ($versionRun.ExitCode -ne 0 -or !($versionRun.Lines -match 'version')) { throw 'Informational stderr was mistaken for a failure.' }

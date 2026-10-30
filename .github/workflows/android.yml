@@ -14,10 +14,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - name: Verify cross-process operation locking on Windows PowerShell
+      - name: Verify Windows operation locking and build receipts
         shell: pwsh
         run: |
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-ProjectOperationLock.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-ProjectBuildReceipt.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   verify:
     runs-on: ubuntu-24.04

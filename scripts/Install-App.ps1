@@ -11,6 +11,7 @@ $operationLock = Enter-ProjectOperationLock -Root (Join-Path $PSScriptRoot '..')
 try {
 . (Join-Path $PSScriptRoot 'Use-ProjectEnvironment.ps1')
 . (Join-Path $PSScriptRoot 'Get-ProjectBuildInputFingerprint.ps1')
+. (Join-Path $PSScriptRoot 'Assert-ProjectBuildReceipt.ps1')
 $adbExecutable = Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe'
 $env:ANDROID_ADB_LOG_PATH = Join-Path $localRoot 'adb-server.log'
 $expectedPackage = "org.rokidfieldlog.$Target"
@@ -21,7 +22,7 @@ if (!(Test-Path -LiteralPath (Join-Path $projectRoot $relativeApk))) { throw 'Bu
 $receiptPath = Join-Path $localRoot ("verified-build-$variant.json")
 if (!(Test-Path -LiteralPath $receiptPath)) { throw 'Run scripts/Build.ps1 to verify these APKs before installing.' }
 $receipt = Get-Content -LiteralPath $receiptPath -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($receipt.status -cne 'VERIFIED' -or $receipt.variant -cne $variant) { throw 'Build did not complete verification; rebuild before installing.' }
+Assert-ProjectBuildReceipt -Receipt $receipt -Variant $variant
 Assert-ProjectBuildInputsUnchanged -Root $projectRoot -Expected $receipt.inputFingerprint
 if ($receipt.apkHashes.$Target -cne (Get-FileHash -LiteralPath (Join-Path $projectRoot $relativeApk) -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'APK differs from the verified build; rebuild before installing.' }
 & (Join-Path $PSScriptRoot 'Test-Apk.ps1') -Target $Target -Variant $variant
