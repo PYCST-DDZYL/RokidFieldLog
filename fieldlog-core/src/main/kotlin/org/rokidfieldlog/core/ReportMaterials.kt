@@ -201,10 +201,20 @@ class ReportRepository(private val root: File, private val texts: AtomicTextFile
         return draft
     }
     fun createOnSite(id: String = UUID.randomUUID().toString()): ReportDraft {
-        require(CaptureFiles.validId(id) && !path(id).exists())
+        require(CaptureFiles.validId(id))
+        require(!hasOnSiteRecord(id)) { "现场草稿已有记录或待恢复文件，请重新打开并核查" }
         val draft = ReportDraft(reportId = id, isSynthetic = false)
         texts.write(path(id), ReportCodec.encode(draft))
         return draft
+    }
+    private fun hasOnSiteRecord(id: String): Boolean = listOf("", ".bak", ".new").any { File(path(id).path + it).exists() }
+
+    /** Retry an interrupted first creation, but never replace an existing or unreadable draft. */
+    fun openOnSite(id: String, allowCreate: Boolean): ReportDraft {
+        require(CaptureFiles.validId(id))
+        if (hasOnSiteRecord(id)) return load(id)
+        require(allowCreate) { "原现场草稿不存在，请返回列表核查；未创建替代记录" }
+        return createOnSite(id)
     }
     /** Attach after USB transfer without changing the address confirmed on site. Duplicate IDs are no-ops. */
     fun attachBatch(id: String, expectedRevision: Long, photoIds: List<String>): ReportDraft {

@@ -31,19 +31,23 @@ class OnSiteActivity : InspectionScreen() {
     private var reference: PhotographerReference? = null
     private var suggestion = ""
     private var restored: ReportDraft? = null
+    private var mayCreateDraft = false
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         reportId = state?.getString("reportId") ?: intent.getStringExtra("reportId") ?: UUID.randomUUID().toString()
         if (!CaptureFiles.validId(reportId)) { finish(); return }
+        mayCreateDraft = intent.getStringExtra("reportId") == null && (state?.getBoolean("mayCreateDraft", false) ?: true)
         restored = state?.getString("editing")?.let { runCatching { ReportCodec.decode(it, reportId) }.getOrNull() }
         probe = LocationProbe(this); probeStore = PrivateProbeStore(this)
         if (android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(
             android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { leave() }
         task("正在打开现场地址…", {
-            if (intent.getStringExtra("reportId") != null || state != null) store.reports.load(reportId)
-            else store.reports.createOnSite(reportId)
-        }) { saved -> render(restored?.takeIf { it.revision == saved.revision } ?: saved); restored = null }
+            store.reports.openOnSite(reportId, allowCreate = mayCreateDraft)
+        }) { saved ->
+            mayCreateDraft = false
+            render(restored?.takeIf { it.revision == saved.revision } ?: saved); restored = null
+        }
     }
     private fun field(label: String, value: String): EditText {
         val count = OfflineUi.text(this, label + " · " + value.length + "/200"); content.addView(count)
@@ -173,6 +177,7 @@ class OnSiteActivity : InspectionScreen() {
     override fun onBackPressed() { if (android.os.Build.VERSION.SDK_INT < 33) leave() else super.onBackPressed() }
     override fun onSaveInstanceState(out: Bundle) {
         out.putString("reportId", reportId)
+        out.putBoolean("mayCreateDraft", mayCreateDraft)
         if (draft != null && ::address.isInitialized) out.putString("editing", ReportCodec.encode(snapshot()))
         super.onSaveInstanceState(out)
     }
