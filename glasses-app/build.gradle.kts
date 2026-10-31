@@ -35,8 +35,8 @@ android {
         applicationId = "org.rokidfieldlog.glasses"
         minSdk = 31
         targetSdk = 36
-        versionCode = 11
-        versionName = "0.2.8-record-check"
+        versionCode = 12
+        versionName = "0.2.9-cache-check"
     }
     signingConfigs {
         create("persistentRelease") {

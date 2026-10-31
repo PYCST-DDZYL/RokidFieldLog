@@ -174,6 +174,19 @@ class CaptureRepositoryTest {
         } }
         assertFalse(opened); assertEquals(before, storage.read(saved.photoId)); assertTrue(photo(saved.photoId).isFile)
     }
+    @Test fun malformedCacheDoesNotCountAsVerifiedOrRewriteSource() {
+        val saved = save()
+        val tree = com.google.gson.JsonParser.parseString(storage.read(saved.photoId)).asJsonObject
+        val cache = tree.getAsJsonObject("photoVerification")
+        cache.addProperty("lastModifiedUtcMillis", cache["lastModifiedUtcMillis"].asString)
+        val malformed = tree.toString(); storage.write(saved.photoId, malformed)
+        val state = CaptureStorageState(); decodes.set(0)
+        val result = repository(state).recover()
+        assertEquals(1, result.errors); assertEquals(0, state.savedPhotoCount())
+        assertEquals(0, decodes.get())
+        assertEquals(malformed, storage.read(saved.photoId)); assertTrue(photo(saved.photoId).isFile)
+    }
+
     @Test fun unchangedColdStartSkipsDecodeAndDoesNotRewriteRecord() {
         val saved = save()
         val original = storage.read(saved.photoId)

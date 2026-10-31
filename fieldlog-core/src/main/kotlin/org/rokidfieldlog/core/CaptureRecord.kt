@@ -188,6 +188,17 @@ object CaptureRecordCodec {
         original["issueCategoryNeedsReview"]?.let {
             require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) { "采集分类确认字段类型异常，原文件保留" }
         }
+        original["photoVerification"]?.takeUnless { it.isJsonNull }?.let { value ->
+            require(value.isJsonObject) { "照片验证缓存结构异常，原文件保留" }
+            val cache = value.asJsonObject
+            for (key in listOf("byteCount", "lastModifiedUtcMillis", "width", "height")) {
+                RecordJson.integer(cache[key], if (key in listOf("width", "height")) Int.MAX_VALUE.toLong() else Long.MAX_VALUE)
+                if (key != "lastModifiedUtcMillis") require(cache[key].asLong > 0) { "照片验证缓存尺寸无效，原文件保留" }
+            }
+            val hash = cache["sha256"]
+            require(hash != null && hash.isJsonPrimitive && hash.asJsonPrimitive.isString &&
+                hash.asString.matches(Regex("[0-9a-fA-F]{64}"))) { "照片验证缓存指纹无效，原文件保留" }
+        }
         for (key in listOf("phoneLocation", "issueLocation")) {
             val location = original[key]?.takeUnless { it.isJsonNull } ?: continue
             require(location.isJsonObject) { "Invalid location object" }
