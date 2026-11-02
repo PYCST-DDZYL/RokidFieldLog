@@ -57,7 +57,9 @@ object OfflineUi {
     }
     fun error(error: Throwable): String = when (error) {
         is SecurityException -> "未获得所选文件的访问权限，请重新选择"
-        is IllegalArgumentException, is IllegalStateException -> error.message?.take(160) ?: "数据需要核对"
+        is IllegalArgumentException, is IllegalStateException -> error.message
+            ?.takeUnless { it.isBlank() || it in setOf("Failed requirement.", "Check failed.") }
+            ?.take(160) ?: "数据需要核对，请检查填写内容或重新打开记录"
         else -> "文件处理未完成，请检查文件和可用空间后重试"
     }
 }
