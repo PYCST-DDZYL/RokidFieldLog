@@ -178,7 +178,9 @@ class OnSiteActivity : InspectionScreen() {
     override fun onSaveInstanceState(out: Bundle) {
         out.putString("reportId", reportId)
         out.putBoolean("mayCreateDraft", mayCreateDraft)
-        if (draft != null && ::address.isInitialized) out.putString("editing", ReportCodec.encode(snapshot()))
+        // A second recreation can happen before the initial disk read returns.
+        val editing = if (draft != null && ::address.isInitialized) snapshot() else restored
+        editing?.let { out.putString("editing", ReportCodec.encode(it)) }
         super.onSaveInstanceState(out)
     }
 }
