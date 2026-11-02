@@ -1,5 +1,6 @@
 package org.rokidfieldlog.core
 
+import com.google.gson.JsonObject
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -167,6 +168,48 @@ class OfflineWorkflowTest {
         assertThrows(IllegalArgumentException::class.java) { library.importPackage(ByteArrayInputStream(bundle(changed))) }
         assertEquals(edited.draft, library.load(id).draft)
         assertEquals(CaptureRecordCodec.encode(edited.source), CaptureRecordCodec.encode(library.load(id).source))
+    }
+
+    @Test fun annotationPropertyOrderDoesNotChangeCaptureIdentity() {
+        val original = capture()
+        original.document.original.add("fixtureExtension", JsonObject().apply {
+            addProperty("first", "SYNTHETIC A"); addProperty("second", "SYNTHETIC B")
+        })
+        library.importPackage(ByteArrayInputStream(bundle(original)))
+        val changed = original.copy(document = original.document.copy(original = original.document.original.deepCopy().apply {
+            add("fixtureExtension", JsonObject().apply {
+                addProperty("second", "SYNTHETIC B"); addProperty("first", "SYNTHETIC A")
+            })
+        }))
+        assertEquals(ImportReport(0, 1, listOf(id)), library.importPackage(ByteArrayInputStream(bundle(changed))))
+    }
+
+    @Test fun changedUnknownAnnotationsAreNeverDiscardedAsDeviceCache() {
+        val original = capture()
+        library.importPackage(ByteArrayInputStream(bundle(original)))
+        val before = CaptureRecordCodec.encode(library.load(id).source)
+        val changed = original.copy(document = original.document.copy(original = original.document.original.deepCopy().apply {
+            addProperty("privateDeviceHint", "SYNTHETIC changed annotation")
+        }))
+        assertThrows(IllegalArgumentException::class.java) { library.importPackage(ByteArrayInputStream(bundle(changed))) }
+        assertEquals(before, CaptureRecordCodec.encode(library.load(id).source))
+    }
+
+    @Test fun unknownNestedCacheAnnotationsStillRequireAnExactMatch() {
+        val capture = capture()
+        val record = capture.document.record.copy(photoVerification = PhotoVerification(
+            capture.photo.length(), 123456L, capture.originalSha256, 80, 60))
+        val original = capture.copy(document = capture.document.copy(record = record,
+            original = capture.document.original.deepCopy().apply {
+                add("photoVerification", JsonObject().apply { addProperty("fixtureExtension", "SYNTHETIC original") })
+            }))
+        library.importPackage(ByteArrayInputStream(bundle(original)))
+        val before = CaptureRecordCodec.encode(library.load(id).source)
+        val changed = original.copy(document = original.document.copy(original = original.document.original.deepCopy().apply {
+            getAsJsonObject("photoVerification").addProperty("fixtureExtension", "SYNTHETIC changed")
+        }))
+        assertThrows(IllegalArgumentException::class.java) { library.importPackage(ByteArrayInputStream(bundle(changed))) }
+        assertEquals(before, CaptureRecordCodec.encode(library.load(id).source))
     }
 
     @Test fun unsafeZipPathsAreRejectedBeforeAnyRecordIsCommitted() {
