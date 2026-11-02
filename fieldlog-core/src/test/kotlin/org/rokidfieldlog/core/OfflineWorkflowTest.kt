@@ -131,6 +131,44 @@ class OfflineWorkflowTest {
         assertEquals(1, library.list().size)
     }
 
+    @Test fun refreshedDeviceVerificationCacheDoesNotBlockRepeatedImport() {
+        val original = capture()
+        library.importPackage(ByteArrayInputStream(bundle(original)))
+        val edited = completedDraft(library.load(id))
+        val refreshed = original.copy(document = original.document.copy(record = original.document.record.copy(
+            photoVerification = PhotoVerification(original.photo.length(), 234567890L, original.originalSha256, 80, 60),
+            lastStorageCheckAtUtcMillis = 234567891L,
+        )))
+        assertEquals(ImportReport(0, 1, listOf(id)), library.importPackage(ByteArrayInputStream(bundle(refreshed))))
+        assertEquals(edited.draft, library.load(id).draft)
+        assertEquals(CaptureRecordCodec.encode(edited.source), CaptureRecordCodec.encode(library.load(id).source))
+        assertArrayEquals(original.photo.readBytes(), library.load(id).original.readBytes())
+    }
+
+    @Test fun refreshedDuplicateDoesNotRollBackNewPhotosInTheSamePackage() {
+        val original = capture()
+        library.importPackage(ByteArrayInputStream(bundle(original)))
+        val refreshed = original.copy(document = original.document.copy(record = original.document.record.copy(
+            photoVerification = PhotoVerification(original.photo.length(), 234567890L, original.originalSha256, 80, 60),
+        )))
+        val otherId = "00000000-0000-4000-8000-000000000072"
+        val other = capture(Color.BLUE).let { next -> next.copy(document = RecordDocument(next.document.record.copy(
+            photoId = otherId, photoFile = "photos/$otherId.jpg"))) }
+        val bytes = ByteArrayOutputStream().also { CapturePackage.write(it, listOf(refreshed, other), isSynthetic = true) }.toByteArray()
+        assertEquals(ImportReport(1, 1, listOf(id, otherId)), library.importPackage(ByteArrayInputStream(bytes)))
+        assertEquals(setOf(id, otherId), library.list().map { it.draft.photoId }.toSet())
+    }
+
+    @Test fun changedCaptureFactsStillConflictWhenPhotoBytesMatch() {
+        val original = capture()
+        library.importPackage(ByteArrayInputStream(bundle(original)))
+        val edited = completedDraft(library.load(id))
+        val changed = original.copy(document = original.document.copy(record = original.document.record.copy(address = "Other synthetic site")))
+        assertThrows(IllegalArgumentException::class.java) { library.importPackage(ByteArrayInputStream(bundle(changed))) }
+        assertEquals(edited.draft, library.load(id).draft)
+        assertEquals(CaptureRecordCodec.encode(edited.source), CaptureRecordCodec.encode(library.load(id).source))
+    }
+
     @Test fun unsafeZipPathsAreRejectedBeforeAnyRecordIsCommitted() {
         for (name in listOf("../outside.txt", "/absolute.jpg", "photos/../../outside.jpg", "photos\\outside.jpg")) {
             assertThrows(IllegalArgumentException::class.java) {

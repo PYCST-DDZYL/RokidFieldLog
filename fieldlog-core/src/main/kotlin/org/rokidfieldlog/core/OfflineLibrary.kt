@@ -1,5 +1,6 @@
 package org.rokidfieldlog.core
 
+import com.google.gson.JsonParser
 import java.io.File
 import java.io.InputStream
 import java.io.RandomAccessFile
@@ -119,7 +120,7 @@ class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
                 }
                 if (old != null) {
                     require(PhotoDigest.sha256(old.original) == capture.originalSha256 &&
-                        CaptureRecordCodec.encode(old.source) == CaptureRecordCodec.encode(capture.document)) { "同一记录编号的内容冲突，现有记录保留" }
+                        importIdentity(old.source) == importIdentity(capture.document)) { "同一记录编号的内容冲突，现有记录保留" }
                 }
                 old == null
             }
@@ -141,6 +142,18 @@ class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
         } finally {
             check(staging.canonicalFile.toPath().startsWith(root.canonicalFile.toPath()))
             staging.deleteRecursively()
+        }
+    }
+
+    /** Device file stats can change after a full recheck; capture facts and unknown annotations cannot. */
+    private fun importIdentity(document: RecordDocument) = JsonParser.parseString(CaptureRecordCodec.encode(document)).asJsonObject.apply {
+        remove("lastStorageCheckAtUtcMillis")
+        val cache = get("photoVerification")
+        if (cache == null || cache.isJsonNull) remove("photoVerification")
+        else {
+            val details = cache.asJsonObject
+            for (field in listOf("byteCount", "lastModifiedUtcMillis", "sha256", "width", "height")) details.remove(field)
+            if (details.size() == 0) remove("photoVerification")
         }
     }
 
