@@ -24,6 +24,8 @@ GitHub Actions runs the shared tests, both APK builds and Android Lint on Ubuntu
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-ProjectOperationLock.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-ProjectBuildReceipt.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-PublishSafetyRegression.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-PublishSafety.ps1 -AllTracked
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Build.ps1 -Verify -Clean
 # Only after device-test authorization:
 .\scripts\Test-StorageRecovery.ps1 -ConfirmDeviceTest
@@ -41,5 +43,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-PublishSafe
 ```
 
 The staged-file check rejects generated/private paths, photos, journals, probe snapshots, keys, unexpected binaries, and recognizable secrets. It also checks ignore rules. It is an additional guard, not a guarantee that every possible personal identifier is detectable. Review the staged diff yourself. Keep real evidence under ignored `.local/`; use clearly synthetic fixture values in tests. Never paste tokens, device serials, personal GPS, real photos, or raw device logs into commits or issues.
+
+CI uses `-AllTracked` to scan every file in the checkout index, including a clean checkout with no staged changes. The default mode still scans only the intended staged changes before a commit. `Test-PublishSafetyRegression.ps1` creates an isolated, ignored repository under `.local/` and verifies that unstaged edits cannot conceal sensitive staged content. It does not change the real repository index or use network access. New pushes to the same branch cancel superseded CI runs; inspect the final commit's result.
 
 Dependencies retain their own licenses. The MIT license covers project code, not Android SDK tools, Google Play services, or Rokid SDK binaries.
