@@ -249,6 +249,16 @@ class IssueActivity : Activity() {
         }) { updated -> entry = updated; render(updated); status.text = "材料已保存，请到官方渠道人工提交。" }
     }
     private fun captureFormState(out: Bundle) {
+        // Preserve restored edits while a replacement Activity is still reading the record.
+        if (entry == null || !::category.isInitialized) {
+            savedForm?.let { saved ->
+                val form = Bundle(saved)
+                // Export ownership is captured independently from the current pending operation.
+                for (key in listOf("exportName", "exportRevision", "exportHash")) form.remove(key)
+                out.putAll(form)
+            }
+            return
+        }
         entry?.let {
             if (::category.isInitialized) {
                 out.putString("referenceDraft", DraftCodec.encode(it.draft.copy(photographerReference = photographerReference)))
