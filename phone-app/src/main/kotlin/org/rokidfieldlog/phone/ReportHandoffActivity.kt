@@ -30,9 +30,12 @@ class ReportHandoffActivity : InspectionScreen() {
     }
     override fun onResume() {
         super.onResume()
-        val editing = restored ?: draft?.let { snapshot() }; restored = null
+        if (busy || isFinishing) return
+        val editing = restored ?: draft?.let { snapshot() }
+        restored = editing
         task("正在读取这条问题的回执…", { store.reports.load(reportId) }) { saved ->
             render(editing?.takeIf { it.revision == saved.revision } ?: saved)
+            restored = null
         }
     }
     private fun field(label: String, value: String, limit: Int, multiline: Boolean = true): EditText {
@@ -96,7 +99,8 @@ class ReportHandoffActivity : InspectionScreen() {
     @Deprecated("Android 9–12 callback")
     override fun onBackPressed() { if (android.os.Build.VERSION.SDK_INT < 33) leave() else super.onBackPressed() }
     override fun onSaveInstanceState(out: Bundle) {
-        if (draft != null && ::receipt.isInitialized) out.putString("editing", ReportCodec.encode(snapshot()))
+        val editing = if (draft != null && ::receipt.isInitialized) snapshot() else restored
+        editing?.let { out.putString("editing", ReportCodec.encode(it)) }
         super.onSaveInstanceState(out)
     }
 }
