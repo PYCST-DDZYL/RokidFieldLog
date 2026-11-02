@@ -13,6 +13,7 @@ class ReportHandoffActivity : InspectionScreen() {
     private lateinit var reportId: String
     private var draft: ReportDraft? = null
     private var restored: ReportDraft? = null
+    private var restoredForm: Bundle? = null
     private lateinit var receipt: EditText
     private lateinit var extra: EditText
     private lateinit var rejected: EditText
@@ -25,12 +26,14 @@ class ReportHandoffActivity : InspectionScreen() {
         reportId = intent.getStringExtra("reportId") ?: ""
         if (!CaptureFiles.validId(reportId)) { finish(); return }
         restored = state?.getString("editing")?.let { runCatching { ReportCodec.decode(it, reportId) }.getOrNull() }
+        restoredForm = state?.getBundle("handoffForm")
         if (android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(
             android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { leave() }
     }
     override fun onResume() {
         super.onResume()
         if (busy || isFinishing) return
+        restoredForm = captureForm()
         val editing = restored ?: draft?.let { snapshot() }
         restored = editing
         task("正在读取这条问题的回执…", { store.reports.load(reportId) }) { saved ->
@@ -44,27 +47,29 @@ class ReportHandoffActivity : InspectionScreen() {
     }
     private fun render(value: ReportDraft) {
         draft = value; val note = value.handoff
+        val form = restoredForm?.takeIf { it.getLong("revision", -1) == value.revision }
         content.removeAllViews(); content.addView(OfflineUi.text(this, "回执与试交记录", 25f))
         status.text = "问题 #" + reportId.take(8) + " · " + value.address
         content.addView(status)
         content.addView(OfflineUi.text(this, "只记录实际发生的人工提交。分享、打开网页和保存ZIP都不会自动填回执，也不代表受理或修复。"))
-        receipt = field("回执号 / 对方明确回复（没有就留空）", note.receipt, 200)
-        attemptedOn = note.attemptedOn
+        receipt = field("回执号 / 对方明确回复（没有就留空）", form?.getString("receipt") ?: note.receipt, 200)
+        attemptedOn = form?.getString("attemptedOn") ?: note.attemptedOn
         date = OfflineUi.button(this, "本次实际试交日期：" + attemptedOn.ifBlank { "尚未登记" }) {
             val initial = runCatching { LocalDate.parse(attemptedOn) }.getOrElse { LocalDate.now() }
             DatePickerDialog(this, { _, year, month, day ->
                 attemptedOn = LocalDate.of(year, month + 1, day).toString(); date.text = "本次实际试交日期：" + attemptedOn
             }, initial.year, initial.monthValue - 1, initial.dayOfMonth).show()
         }; content.addView(date)
-        extra = field("对方额外要求了什么（最多1000字）", note.extraRequirements, 1000)
+        extra = field("对方额外要求了什么（最多1000字）", form?.getString("extra") ?: note.extraRequirements, 1000)
         content.addView(OfflineUi.text(this, value.photos.mapIndexed { index, photo -> "照片" + (index + 1) + " = #" + photo.photoId.take(8) + "（" + ReportReadiness.roleLabel(photo.role) + "）" }.joinToString("\n")))
-        rejected = field("哪张照片被退，原因是什么（写照片编号，最多1000字）", note.rejectedPhotos, 1000)
-        minutes = field("本次人工整理与提交一共花了多少分钟（实测）", note.elapsedMinutes, 5, false).apply { inputType = android.text.InputType.TYPE_CLASS_NUMBER }
+        rejected = field("哪张照片被退，原因是什么（写照片编号，最多1000字）", form?.getString("rejected") ?: note.rejectedPhotos, 1000)
+        minutes = field("本次人工整理与提交一共花了多少分钟（实测）", form?.getString("minutes") ?: note.elapsedMinutes, 5, false).apply { inputType = android.text.InputType.TYPE_CLASS_NUMBER }
         content.addView(OfflineUi.text(this, "相册 / 打码照片：这一次得到什么结果？"))
         album = Spinner(this).apply {
             adapter = ArrayAdapter(this@ReportHandoffActivity, android.R.layout.simple_spinner_dropdown_item,
                 listOf("尚未验证", "本次接受了打码相册照片", "本次拒绝了打码相册照片", "本批无需打码，不能据此判断打码接收"))
-            setSelection(listOf("UNKNOWN", "ACCEPTED", "REJECTED", "NOT_NEEDED").indexOf(note.albumResult).coerceAtLeast(0))
+            val savedSelection = listOf("UNKNOWN", "ACCEPTED", "REJECTED", "NOT_NEEDED").indexOf(note.albumResult).coerceAtLeast(0)
+            setSelection((form?.getInt("album", savedSelection) ?: savedSelection).coerceIn(0, 3))
         }; content.addView(album)
         content.addView(OfflineUi.button(this, "保存这条问题的记录") { save { render(it); status.append("\n已保存。") } })
         content.addView(OfflineUi.button(this, "有回执后：关联现有问题历史 / 继续复查") {
@@ -84,6 +89,18 @@ class ReportHandoffActivity : InspectionScreen() {
         })
         content.addView(OfflineUi.text(this, "沿用现有的观察关联和前后对照。回执不会自动变成维修完成，也不会替人判断修没修。"))
         content.addView(OfflineUi.button(this, "保存并返回材料") { save { finish() } })
+        restoredForm = null
+    }
+    /** UI state may be temporarily invalid; only an explicit save validates the durable record. */
+    private fun captureForm(): Bundle? {
+        val current = draft ?: return restoredForm
+        if (!::receipt.isInitialized) return restoredForm
+        return Bundle().apply {
+            putLong("revision", current.revision)
+            putString("receipt", receipt.text.toString()); putString("attemptedOn", attemptedOn)
+            putString("extra", extra.text.toString()); putString("rejected", rejected.text.toString())
+            putString("minutes", minutes.text.toString()); putInt("album", album.selectedItemPosition)
+        }
     }
     private fun snapshot() = checkNotNull(draft).copy(handoff = draft!!.handoff.copy(
         receipt = receipt.text.toString().trim(), attemptedOn = attemptedOn,
@@ -101,6 +118,7 @@ class ReportHandoffActivity : InspectionScreen() {
     override fun onSaveInstanceState(out: Bundle) {
         val editing = if (draft != null && ::receipt.isInitialized) snapshot() else restored
         editing?.let { out.putString("editing", ReportCodec.encode(it)) }
+        captureForm()?.let { out.putBundle("handoffForm", it) }
         super.onSaveInstanceState(out)
     }
 }
