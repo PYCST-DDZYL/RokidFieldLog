@@ -119,6 +119,9 @@ class OfflineLibrary(private val root: File, private val texts: AtomicTextFiles,
                     }
                 }
                 if (old != null) {
+                    require(old.draft.isSynthetic == incoming.isSynthetic) {
+                        "同一记录的演示标记冲突，本批未导入，现有记录保留"
+                    }
                     require(PhotoDigest.sha256(old.original) == capture.originalSha256 &&
                         importIdentity(old.source) == importIdentity(capture.document)) { "同一记录编号的内容冲突，现有记录保留" }
                 }

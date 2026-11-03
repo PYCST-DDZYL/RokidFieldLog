@@ -72,6 +72,27 @@ class PhotoImportTest {
         assertEquals(2, library.list().size); assertNoStaging()
     }
 
+    @Test fun conflictingDemoFlagRejectsTheWholeBatchAndKeepsExistingEdits() {
+        library.importPhotos(selected(jpeg()))
+        val original = library.list().single()
+        val edited = library.save(original.draft.copy(address = "Synthetic retained fixture address"), original.draft.revision)
+        val first = IncomingCapture(original.source, original.original, original.importedSha256)
+        val secondId = "00000000-0000-4000-8000-000000000099"
+        val secondFile = temp.newFile("additional.jpg").apply { writeBytes(jpeg(Color.BLUE)) }
+        val secondHash = PhotoDigest.sha256(secondFile)
+        val second = IncomingCapture(RecordDocument(CaptureRecord.pending(secondId, null)
+            .copy(width = 80, height = 60, photoSha256 = secondHash)), secondFile, secondHash)
+        val zip = ByteArrayOutputStream().also { CapturePackage.write(it, listOf(first, second), isSynthetic = true) }
+
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            library.importPackage(ByteArrayInputStream(zip.toByteArray()))
+        }
+        assertTrue(error.message.orEmpty().contains("演示标记冲突"))
+        assertEquals(edited.draft, library.list().single().draft)
+        assertEquals(original.importedSha256, PhotoDigest.sha256(original.original))
+        assertNoStaging()
+    }
+
     @Test fun invalidSecondPhotoRollsBackTheWholeBatchAndKeepsExistingData() {
         library.importPhotos(selected(jpeg(Color.GREEN)))
         val old = library.list().single()
