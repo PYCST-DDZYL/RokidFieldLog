@@ -13,7 +13,7 @@ object CaptureTimeQuality {
         if (startUtc == null || endUtc == null) return Assessment(Status.UNKNOWN, duration)
         val wallDuration = try { Math.subtractExact(endUtc, startUtc) }
         catch (_: ArithmeticException) { return Assessment(Status.WALL_CLOCK_DISCONTINUITY, duration) }
-        val consistent = wallDuration >= duration - WALL_CLOCK_TOLERANCE_MILLIS &&
+        val consistent = wallDuration >= 0 && wallDuration >= duration - WALL_CLOCK_TOLERANCE_MILLIS &&
             wallDuration <= duration + WALL_CLOCK_TOLERANCE_MILLIS
         return Assessment(if (consistent) Status.CONSISTENT_INTERVAL else Status.WALL_CLOCK_DISCONTINUITY, duration)
     }

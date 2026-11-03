@@ -22,6 +22,14 @@ class CaptureTimeQualityTest {
         assertEquals(CaptureTimeQuality.Assessment(CaptureTimeQuality.Status.UNKNOWN, null),
             CaptureTimeQuality.assess(1000L, null, 1L, null))
     }
+
+    @Test fun aSmallBackwardClockChangeIsStillAClockDiscontinuity() {
+        val result = CaptureTimeQuality.assess(2000L, 1999L, 1L, 100_000_001L)
+        assertEquals(CaptureTimeQuality.Status.WALL_CLOCK_DISCONTINUITY, result.status)
+        assertEquals(100L, result.durationMillis)
+        assertEquals(CaptureTimeQuality.Status.CONSISTENT_INTERVAL,
+            CaptureTimeQuality.assess(2000L, 2000L, 1L, 100_000_001L).status)
+    }
     @Test fun invertedMonotonicClocksCannotProduceADuration() {
         assertEquals(CaptureTimeQuality.Assessment(CaptureTimeQuality.Status.INVALID_MONOTONIC_INTERVAL, null),
             CaptureTimeQuality.assess(1000L, 2000L, 10L, 5L))
