@@ -22,6 +22,7 @@ try {
         '-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----',
         '(?m)^\s*"(?:latitude|longitude)"\s*:\s*-?\d'
     )
+    $compactCoordinatePattern = '[,{]\s*"(?:latitude|longitude)"\s*:\s*-?\d'
     foreach ($relativePath in $checkedPaths) {
         if ($relativePath -match $pathPattern) { $failures.Add("Private/generated path: $relativePath"); continue }
         if ($relativePath -match '\.(jar|class|dex|dll|exe|so|bin)$' -and $relativePath -ne 'gradle/wrapper/gradle-wrapper.jar') {
@@ -31,6 +32,11 @@ try {
         # Scan the staged blob, not just the working-tree file being committed.
         $stagedText = ((& git show ":$relativePath") -join "`n")
         if ($LASTEXITCODE -ne 0) { throw "Cannot read staged file: $relativePath" }
+        if (($relativePath -match '\.(json|jsonl|ndjson|geojson)$' -or $stagedText -match '^\s*(\{|\[)') -and
+            $stagedText -match $compactCoordinatePattern) {
+            $failures.Add("GPS snapshot pattern in $relativePath (contents hidden)")
+            continue
+        }
         foreach ($pattern in $secretPatterns) {
             if ($stagedText -match $pattern) { $failures.Add("Secret or GPS snapshot pattern in $relativePath (contents hidden)"); break }
         }

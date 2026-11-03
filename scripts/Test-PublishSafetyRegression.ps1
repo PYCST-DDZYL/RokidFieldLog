@@ -42,6 +42,17 @@ Assert-PublishResult $false -AllTracked
 Invoke-FixtureGit -Arguments @('add', '--', 'README.md')
 Assert-PublishResult $true
 
+# Check both coordinate keys in compact and indented JSON without publishing fixture data.
+$coordinates = Join-Path $fixture 'synthetic-coordinates.json'
+foreach ($layout in @('{"probe":{"latitude":{0}}}', '{"tag":"SYNTHETIC","longitude":{0}}',
+        "{`n  `"latitude`": {0}`n}")) {
+    [IO.File]::WriteAllText($coordinates, $layout.Replace('{0}', '-1.25'))
+    Invoke-FixtureGit -Arguments @('add', '--', 'synthetic-coordinates.json')
+    Assert-PublishResult $false
+    Assert-PublishResult $false -AllTracked
+}
+Invoke-FixtureGit -Arguments @('rm', '--cached', '--quiet', '--', 'synthetic-coordinates.json')
+
 # Force-added ignored files must still be rejected before a real commit.
 foreach ($relative in @('.private/fixture.txt', '.local/fixture.txt', '.env', 'captures/fixture.jpg', 'fixture.dll',
         'signing-copy.p12', 'signing-copy.pfx', 'last-probe.json.bak', 'last-probe.json.new',
