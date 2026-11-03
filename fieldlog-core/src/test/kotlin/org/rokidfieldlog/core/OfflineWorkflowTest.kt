@@ -243,6 +243,34 @@ class OfflineWorkflowTest {
         assertTrue(library.list().isEmpty())
     }
 
+    @Test fun invalidUtf8InCaptureAnnotationPreventsImport() {
+        val original = capture()
+        val json = CaptureRecordCodec.encode(original.document)
+            .replace("PRIVATE_SOURCE_SENTINEL", "SYNTHETIC_TEXT_MARKER")
+            .toByteArray(Charsets.UTF_8)
+        val marker = json.toString(Charsets.UTF_8).indexOf("SYNTHETIC_TEXT_MARKER")
+        check(marker >= 0)
+        json[marker] = 0xFF.toByte()
+        val bytes = customZip(listOf("fieldlog-package.json" to CapturePackage.manifestBytes(1, true),
+            "records/$id.json" to json, "photos/$id.jpg" to original.photo.readBytes()))
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            library.importPackage(ByteArrayInputStream(bytes))
+        }
+        assertTrue(error.cause is java.nio.charset.CharacterCodingException)
+        assertTrue(library.list().isEmpty())
+    }
+
+    @Test fun singletonArrayCannotStandInForPackageFormatString() {
+        val original = capture()
+        val manifest = CapturePackage.manifestBytes(1, true).toString(Charsets.UTF_8)
+            .replace("\"FIELDLOG_CAPTURE_PACKAGE\"", "[\"FIELDLOG_CAPTURE_PACKAGE\"]")
+        val bytes = customZip(listOf("fieldlog-package.json" to manifest.toByteArray(Charsets.UTF_8),
+            "records/$id.json" to CaptureRecordCodec.encode(original.document).toByteArray(Charsets.UTF_8),
+            "photos/$id.jpg" to original.photo.readBytes()))
+        assertThrows(IllegalArgumentException::class.java) { library.importPackage(ByteArrayInputStream(bytes)) }
+        assertTrue(library.list().isEmpty())
+    }
+
     @Test fun fractionalOrStringPackageVersionAndCountCannotBeSilentlyCoerced() {
         val members = mutableListOf<Pair<String, ByteArray>>()
         ZipInputStream(ByteArrayInputStream(bundle())).use { zip ->

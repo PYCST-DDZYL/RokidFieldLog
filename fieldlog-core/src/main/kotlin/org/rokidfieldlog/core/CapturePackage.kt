@@ -1,8 +1,11 @@
 package org.rokidfieldlog.core
 
+import com.google.gson.JsonPrimitive
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -60,8 +63,10 @@ object CapturePackage {
         }
         val manifestFile = File(staging, "fieldlog-package.json")
         require(manifestFile.isFile) { "Missing capture package manifest" }
-        val manifest = RecordJson.objectValue(manifestFile.readText(Charsets.UTF_8), MAX_JSON_BYTES.toInt())
-        require(manifest["format"]?.asString == "FIELDLOG_CAPTURE_PACKAGE")
+        val manifest = RecordJson.objectValue(readMetadata(manifestFile), MAX_JSON_BYTES.toInt())
+        require(manifest["format"] == JsonPrimitive("FIELDLOG_CAPTURE_PACKAGE")) {
+            "采集包格式字段异常，未导入"
+        }
         val version = manifest["version"]
         require(version != null && version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.toString() == "1") {
             "Unsupported capture package version"
@@ -74,7 +79,7 @@ object CapturePackage {
             recordCount.isJsonPrimitive && recordCount.asJsonPrimitive.isNumber && recordCount.toString() == ids.size.toString())
         require(names == ids.flatMap { listOf("records/$it.json", "photos/$it.jpg") }.toSet() + "fieldlog-package.json") { "Records and photos do not match" }
         val captures = ids.map { id ->
-            val document = CaptureRecordCodec.decode(File(staging, "records/$id.json").readText(Charsets.UTF_8))
+            val document = CaptureRecordCodec.decode(readMetadata(File(staging, "records/$id.json")))
             val record = document.record
             require(record.photoId == id && record.photoFile == "photos/$id.jpg")
             require(record.captureState in setOf(CaptureState.SAVED, CaptureState.RECOVERED) && record.photoIntegrityStatus == PhotoIntegrity.VERIFIED)
@@ -87,6 +92,13 @@ object CapturePackage {
             IncomingCapture(document, photo, hash)
         }
         return IncomingPackage(captures, synthetic)
+    }
+
+    // readText replaces invalid UTF-8, which can turn a damaged annotation into valid JSON.
+    private fun readMetadata(file: File): String = try {
+        Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(file.readBytes())).toString()
+    } catch (error: CharacterCodingException) {
+        throw IllegalArgumentException("采集包记录含无效 UTF-8，未导入", error)
     }
 
     fun write(output: OutputStream, captures: List<IncomingCapture>, isSynthetic: Boolean = false) {
