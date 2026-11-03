@@ -77,6 +77,33 @@ class CaptureRepositoryTest {
         assertEquals(oversized.size.toLong(), photo(stamp.photoId).length())
     }
 
+    @Test fun captureTransferRejectsAChangeWhileTheArchiveIsBeingWritten() {
+        val id = stamp().photoId
+        val original = temporary.newFile("synthetic.jpg").apply { writeBytes(validBytes) }
+        val fingerprint = PhotoDigest.sha256(original)
+        val annotation = ByteArray(96 * 1024).also { java.util.Random(7301).nextBytes(it) }
+        val source = com.google.gson.JsonObject().apply {
+            addProperty("syntheticFixture", java.util.Base64.getEncoder().encodeToString(annotation))
+        }
+        val capture = IncomingCapture(RecordDocument(CaptureRecord.pending(id, null), source), original, fingerprint)
+        val modified = byteArrayOf(1, 2, 3, 5)
+        var archiveStarted = false
+        val output = object : java.io.ByteArrayOutputStream() {
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                if (!archiveStarted) {
+                    archiveStarted = true
+                    original.writeBytes(modified)
+                }
+                super.write(bytes, offset, length)
+            }
+        }
+
+        val error = assertThrows(IllegalArgumentException::class.java) { CapturePackage.write(output, listOf(capture)) }
+        assertTrue(archiveStarted)
+        assertTrue(error.message.orEmpty().contains("写入时"))
+        assertArrayEquals(modified, original.readBytes())
+    }
+
     @Test fun moreThanOneHundredPhotosTransferInCompleteReimportableBatches() {
         val decoder = ImageInspector { file -> javax.imageio.ImageIO.read(file)?.let { it.width to it.height } }
         val repo = repository(images = decoder)

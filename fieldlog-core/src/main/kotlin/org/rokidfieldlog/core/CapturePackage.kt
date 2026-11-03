@@ -112,14 +112,16 @@ object CapturePackage {
             var total = manifest.size.toLong()
             for (capture in captures) {
                 val id = capture.document.record.photoId
-                require(CaptureFiles.validId(id) && capture.photo.length() in 1..MAX_PHOTO_BYTES)
-                require(PhotoDigest.sha256(capture.photo) == capture.originalSha256)
+                val photoBytes = capture.photo.length()
+                require(CaptureFiles.validId(id) && photoBytes in 1..MAX_PHOTO_BYTES)
                 val json = CaptureRecordCodec.encode(capture.document).toByteArray(Charsets.UTF_8)
                 require(json.size <= MAX_JSON_BYTES)
-                total += json.size + capture.photo.length()
+                total += json.size + photoBytes
                 require(total <= MAX_TOTAL_BYTES)
                 zip.putNextEntry(ZipEntry("records/$id.json")); zip.write(json); zip.closeEntry()
-                zip.putNextEntry(ZipEntry("photos/$id.jpg")); capture.photo.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+                zip.putNextEntry(ZipEntry("photos/$id.jpg"))
+                PhotoDigest.copyVerified(capture.photo, zip, photoBytes, capture.originalSha256)
+                zip.closeEntry()
             }
         }
     }
