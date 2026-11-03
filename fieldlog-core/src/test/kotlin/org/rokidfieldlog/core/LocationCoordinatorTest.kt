@@ -244,4 +244,19 @@ class LocationCoordinatorTest {
         assertEquals("NO_ENABLED_PROVIDER", results.single().reason)
         assertNull(results.single().observation)
     }
+
+    @Test fun requestStartedDuringCancellationIsNotOverwrittenByTheEarlierStartCall() {
+        val newest = mutableListOf<LocationCompletion>()
+        coordinator.start(true, onComplete = {
+            assertEquals("CANCELLED", it.status)
+            coordinator.start(true, onComplete = newest::add)
+        })
+        start(force = true)
+        assertEquals(2, system.subscriptions.size)
+        assertTrue(system.subscriptions.first().cancelled)
+        system.emit(fix())
+        assertEquals("SUCCESS", newest.single().status)
+        assertTrue(system.subscriptions.all { it.cancelled })
+        assertTrue(results.isEmpty())
+    }
 }

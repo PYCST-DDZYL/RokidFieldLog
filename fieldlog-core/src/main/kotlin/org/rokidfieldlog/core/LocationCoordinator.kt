@@ -34,10 +34,14 @@ class LocationCoordinator(
         var lastRejection: String? = null
     }
     private var current: Request? = null
+    private var latestStart = 0L
 
     fun start(forceSystem: Boolean, approximate: Boolean = false,
         onProgress: (LocationUpdate) -> Unit = {}, onComplete: (LocationCompletion) -> Unit) {
+        val start = ++latestStart
         cancel()
+        // Cancellation can invoke a callback that starts a newer request.
+        if (start != latestStart) return
         val request = Request(LocationAttempt(clock.elapsedNanos()), onProgress, onComplete,
             if (approximate) Float.MAX_VALUE else 50f)
         current = request
