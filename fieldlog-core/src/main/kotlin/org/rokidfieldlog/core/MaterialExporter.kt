@@ -61,7 +61,10 @@ object MaterialExporter {
             }
             textEntry("report.txt", text)
             textEntry("summary.json", GsonBuilder().serializeNulls().setPrettyPrinting().create().toJson(summary))
-            zip.putNextEntry(ZipEntry(imageName)); reviewed.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+            val review = checkNotNull(draft.photoReview)
+            zip.putNextEntry(ZipEntry(imageName))
+            PhotoDigest.copyVerified(reviewed, zip, review.byteCount, review.outputSha256)
+            zip.closeEntry()
         }
     }
 

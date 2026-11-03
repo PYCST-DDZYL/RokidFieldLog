@@ -385,8 +385,10 @@ class ReportRepository(private val root: File, private val texts: AtomicTextFile
             entry("summary.json", GsonBuilder().serializeNulls().setPrettyPrinting().create().toJson(summary).toByteArray(Charsets.UTF_8))
             report.photos.forEachIndexed { index, photo ->
                 val source = entries.getValue(photo.photoId)
+                val review = checkNotNull(source.draft.photoReview)
                 zip.putNextEntry(ZipEntry(attachments[index].getValue("file").toString()))
-                source.reviewFile(source.draft.photoReview!!.fileName).inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+                PhotoDigest.copyVerified(source.reviewFile(review.fileName), zip, review.byteCount, review.outputSha256)
+                zip.closeEntry()
             }
         }
     }

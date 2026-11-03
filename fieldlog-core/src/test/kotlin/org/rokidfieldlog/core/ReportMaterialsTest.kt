@@ -72,6 +72,28 @@ class ReportMaterialsTest {
     private fun unzip(file: File) = linkedMapOf<String, ByteArray>().apply {
         ZipInputStream(file.inputStream()).use { zip -> while (true) { val entry = zip.nextEntry ?: break; put(entry.name, zip.readBytes()); zip.closeEntry() } }
     }
+
+    @Test fun sameSizePhotoChangeAfterValidationDiscardsTheUnpublishedReport() {
+        val report = ready()
+        val entry = library.load(report.photos.last().photoId)
+        val reviewed = entry.reviewFile(entry.draft.photoReview!!.fileName)
+        val initialBytes = reviewed.readBytes()
+        val changingInspector = ImageInspector { file ->
+            inspector.dimensions(file).also {
+                if (file == reviewed) {
+                    val changed = initialBytes.copyOf()
+                    changed[changed.lastIndex] = 0
+                    file.writeBytes(changed)
+                }
+            }
+        }
+        val changingReports = ReportRepository(root, texts, library, changingInspector)
+        val error = assertThrows(IllegalArgumentException::class.java) { changingReports.prepare(report.reportId) }
+        assertTrue(error.message.orEmpty().contains("写入时"))
+        assertEquals(initialBytes.size.toLong(), reviewed.length())
+        assertTrue(root.resolve("report-exports").listFiles().orEmpty().isEmpty())
+        assertEquals(report, reports.load(report.reportId))
+    }
     @Test fun importedBatchBuildsOneDraftAndDoesNotAssertPhotoRolesOrLocation() {
         val first = imported(Color.RED); val second = imported(Color.BLUE)
         val batch = reports.createBatch(listOf(first.draft.photoId, second.draft.photoId))
