@@ -101,4 +101,15 @@ class MaterialDocumentCopyTest {
         assertArrayEquals(byteArrayOf(1, 2, 3), output.toByteArray())
         assertTrue(inputClosed); assertTrue(outputClosed); assertFalse(deleted)
     }
+
+    @Test fun sourceCloseFailureDoesNotUndoAnAlreadyCommittedDestination() {
+        val input = object : ByteArrayInputStream(byteArrayOf(1, 2, 3)) {
+            override fun close() { throw IOException("Synthetic source close failure") }
+        }
+        val output = ByteArrayOutputStream()
+        var deleted = false
+        MaterialDocumentCopy.copy({}, { input }, { output }, { deleted = true })
+        assertArrayEquals(byteArrayOf(1, 2, 3), output.toByteArray())
+        assertFalse(deleted)
+    }
 }
