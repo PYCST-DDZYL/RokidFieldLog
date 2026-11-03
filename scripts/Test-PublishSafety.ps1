@@ -14,7 +14,7 @@ try {
         else { @(& git -c core.quotepath=false diff --cached --name-only --diff-filter=ACMR) }
     if ($LASTEXITCODE -ne 0 -or @($checkedPaths).Count -eq 0) { throw 'No source files to check.' }
     $failures = [System.Collections.Generic.List[string]]::new()
-    $pathPattern = '(^|/)(\.tools|\.local|\.private|\.gradle|\.kotlin|\.idea|build|exports|recordings|device-data|captures|gps-records)(/|$)|(^|/)(local\.properties|\.env[^/]*|adbkey(?:\.pub)?|last-probe\.json)$|\.(apk|aab|zip|jpg|jpeg|png|heic|mp4|wav|jks|keystore|pem|key|log|hprof|journal)(\.new)?$'
+    $pathPattern = '(^|/)(\.tools|\.local|\.private|\.gradle|\.kotlin|\.idea|build|exports|recordings|device-data|captures|gps-records)(/|$)|(^|/)(local\.properties|\.env[^/]*|adbkey(?:\.pub)?|last-(?:successful-)?probe\.json(?:\.(?:bak|new))?)$|\.(apk|aab|zip|jpg|jpeg|png|heic|mp4|wav|jks|keystore|p12|pfx|pem|key|log|hprof|journal)(\.new)?$'
     $secretPatterns = @(
         '\bgh[pousr]_[A-Za-z0-9]{20,}\b',
         '\bgithub_pat_[A-Za-z0-9_]{30,}\b',
@@ -35,7 +35,7 @@ try {
             if ($stagedText -match $pattern) { $failures.Add("Secret or GPS snapshot pattern in $relativePath (contents hidden)"); break }
         }
     }
-    $mustBeIgnored = @('.local/device/photo.jpg', '.local/device/probe.json', '.tools/android-sdk/tool.exe', '.private/release-signing.properties', '.private/release.jks', '.env', 'adbkey', 'last-probe.json', 'phone-app/build/outputs/apk/debug/phone-app-debug.apk', 'captures/private.jpg')
+    $mustBeIgnored = @('.local/device/photo.jpg', '.local/device/probe.json', '.tools/android-sdk/tool.exe', '.private/release-signing.properties', '.private/release.jks', '.env', 'adbkey', 'last-probe.json', 'last-probe.json.bak', 'last-probe.json.new', 'last-successful-probe.json', 'last-successful-probe.json.bak', 'last-successful-probe.json.new', 'phone-app/build/outputs/apk/debug/phone-app-debug.apk', 'captures/private.jpg', 'fixture.p12', 'fixture.pfx')
     foreach ($probePath in $mustBeIgnored) {
         & git check-ignore -q -- $probePath
         if ($LASTEXITCODE -ne 0) { $failures.Add("Missing ignore rule: $probePath") }

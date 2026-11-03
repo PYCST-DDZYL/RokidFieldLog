@@ -43,7 +43,9 @@ Invoke-FixtureGit -Arguments @('add', '--', 'README.md')
 Assert-PublishResult $true
 
 # Force-added ignored files must still be rejected before a real commit.
-foreach ($relative in @('.private/fixture.txt', '.local/fixture.txt', '.env', 'captures/fixture.jpg', 'fixture.dll')) {
+foreach ($relative in @('.private/fixture.txt', '.local/fixture.txt', '.env', 'captures/fixture.jpg', 'fixture.dll',
+        'signing-copy.p12', 'signing-copy.pfx', 'last-probe.json.bak', 'last-probe.json.new',
+        'last-successful-probe.json', 'last-successful-probe.json.bak', 'last-successful-probe.json.new')) {
     $target = Join-Path $fixture $relative
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)) | Out-Null
     [IO.File]::WriteAllText($target, 'SYNTHETIC publication rejection fixture')

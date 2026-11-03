@@ -34,6 +34,11 @@ gps-records/
 adbkey
 adbkey.pub
 last-probe.json
+last-probe.json.bak
+last-probe.json.new
+last-successful-probe.json
+last-successful-probe.json.bak
+last-successful-probe.json.new
 *.journal
 *.journal.new
 .DS_Store
