@@ -56,7 +56,8 @@ Invoke-FixtureGit -Arguments @('rm', '--cached', '--quiet', '--', 'synthetic-coo
 # Force-added ignored files must still be rejected before a real commit.
 foreach ($relative in @('.private/fixture.txt', '.local/fixture.txt', '.env', 'captures/fixture.jpg', 'fixture.dll',
         'signing-copy.p12', 'signing-copy.pfx', 'last-probe.json.bak', 'last-probe.json.new',
-        'last-successful-probe.json', 'last-successful-probe.json.bak', 'last-successful-probe.json.new')) {
+        'last-successful-probe.json', 'last-successful-probe.json.bak', 'last-successful-probe.json.new',
+        'snapshot.db', 'snapshot.db-wal', 'snapshot.sqlite', 'snapshot.sqlite3-shm', 'snapshot.sqlite3.bak')) {
     $target = Join-Path $fixture $relative
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)) | Out-Null
     [IO.File]::WriteAllText($target, 'SYNTHETIC publication rejection fixture')
@@ -66,4 +67,4 @@ foreach ($relative in @('.private/fixture.txt', '.local/fixture.txt', '.env', 'c
     Invoke-FixtureGit -Arguments @('rm', '--cached', '--quiet', '--', $relative)
 }
 Assert-PublishResult $true
-Write-Output 'Publish-safety regressions passed: staged-blob authority, private paths, photos and unexpected binaries. No network or user repository index was used.'
+Write-Output 'Publish-safety regressions passed: staged-blob authority, private paths, database snapshots, photos and unexpected binaries. No network or user repository index was used.'

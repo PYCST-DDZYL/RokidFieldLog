@@ -23,7 +23,9 @@ try {
         '(?m)^\s*"(?:latitude|longitude)"\s*:\s*-?\d'
     )
     $compactCoordinatePattern = '[,{]\s*"(?:latitude|longitude)"\s*:\s*-?\d'
+    $databasePattern = '\.(db|sqlite|sqlite3)(-(wal|shm|journal)|\.(bak|new))?$'
     foreach ($relativePath in $checkedPaths) {
+        if ($relativePath -match $databasePattern) { $failures.Add("Private database path: $relativePath"); continue }
         if ($relativePath -match $pathPattern) { $failures.Add("Private/generated path: $relativePath"); continue }
         if ($relativePath -match '\.(jar|class|dex|dll|exe|so|bin)$' -and $relativePath -ne 'gradle/wrapper/gradle-wrapper.jar') {
             $failures.Add("Unexpected binary: $relativePath"); continue
@@ -42,6 +44,7 @@ try {
         }
     }
     $mustBeIgnored = @('.local/device/photo.jpg', '.local/device/probe.json', '.tools/android-sdk/tool.exe', '.private/release-signing.properties', '.private/release.jks', '.env', 'adbkey', 'last-probe.json', 'last-probe.json.bak', 'last-probe.json.new', 'last-successful-probe.json', 'last-successful-probe.json.bak', 'last-successful-probe.json.new', 'phone-app/build/outputs/apk/debug/phone-app-debug.apk', 'captures/private.jpg', 'fixture.p12', 'fixture.pfx')
+    $mustBeIgnored += @('snapshot.db', 'snapshot.db-wal', 'snapshot.sqlite', 'snapshot.sqlite3-shm', 'snapshot.sqlite3.bak')
     foreach ($probePath in $mustBeIgnored) {
         & git check-ignore -q -- $probePath
         if ($LASTEXITCODE -ne 0) { $failures.Add("Missing ignore rule: $probePath") }
