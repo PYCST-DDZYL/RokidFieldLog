@@ -69,6 +69,7 @@ class InspectionCompareActivity : InspectionScreen() {
     }
     override fun onSaveInstanceState(out: Bundle) {
         current?.let { out.putLong("revision", it.issue.revision); if (::note.isInitialized) out.putString("note", note.text.toString()) }
+            ?: restored?.let(out::putAll)
         super.onSaveInstanceState(out)
     }
     override fun onDestroy() { views.forEach { it.release() }; super.onDestroy() }
