@@ -34,8 +34,7 @@ class PrivateCaptureStore(private val context: Context, rootOverride: File? = nu
         override fun exists(id: String): Boolean = listOf("", ".bak", ".new").any { File(file(id).path + it).exists() }
         override fun read(id: String): String? = try {
             AtomicFile(file(id)).openRead().use { input ->
-                check(input.channel.size() <= 256 * 1024) { "Metadata exceeds supported size" }
-                input.bufferedReader(Charsets.UTF_8).readText()
+                RecordText.read(input, 256 * 1024)
             }
         } catch (_: FileNotFoundException) {
             check(!exists(id)) { "Record exists but cannot be read" }

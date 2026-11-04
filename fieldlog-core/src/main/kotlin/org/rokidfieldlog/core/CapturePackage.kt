@@ -4,8 +4,6 @@ import com.google.gson.JsonPrimitive
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
-import java.nio.ByteBuffer
-import java.nio.charset.CharacterCodingException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -94,11 +92,8 @@ object CapturePackage {
         return IncomingPackage(captures, synthetic)
     }
 
-    // readText replaces invalid UTF-8, which can turn a damaged annotation into valid JSON.
-    private fun readMetadata(file: File): String = try {
-        Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(file.readBytes())).toString()
-    } catch (error: CharacterCodingException) {
-        throw IllegalArgumentException("采集包记录含无效 UTF-8，未导入", error)
+    private fun readMetadata(file: File): String = file.inputStream().use {
+        RecordText.read(it, MAX_JSON_BYTES.toInt())
     }
 
     fun write(output: OutputStream, captures: List<IncomingCapture>, isSynthetic: Boolean = false) {

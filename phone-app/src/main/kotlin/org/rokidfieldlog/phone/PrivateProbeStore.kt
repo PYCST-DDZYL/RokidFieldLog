@@ -6,6 +6,7 @@ import org.json.JSONObject
 import java.io.File
 import org.rokidfieldlog.core.PhotographerReference
 import org.rokidfieldlog.core.CaptureRecordCodec
+import org.rokidfieldlog.core.RecordText
 import java.util.concurrent.Executors
 
 class PrivateProbeStore(context: Context) {
@@ -39,8 +40,7 @@ class PrivateProbeStore(context: Context) {
     fun last(): JSONObject? = try {
         // AtomicFile must be allowed to restore a backup after an interrupted write.
         AtomicFile(lastProbe).openRead().use { input ->
-            check(input.channel.size() <= 256 * 1024) { "Probe history exceeds supported size" }
-            JSONObject(input.bufferedReader(Charsets.UTF_8).readText())
+            JSONObject(RecordText.read(input, 256 * 1024))
         }
     } catch (exception: Exception) { null }
 
@@ -49,8 +49,7 @@ class PrivateProbeStore(context: Context) {
 
     fun lastReference(): PhotographerReference? {
         val saved = runCatching { AtomicFile(File(root, "last-successful-probe.json")).openRead().use { input ->
-            require(input.channel.size() <= 256 * 1024)
-            JSONObject(input.bufferedReader(Charsets.UTF_8).readText())
+            JSONObject(RecordText.read(input, 256 * 1024))
         } }.getOrNull()
         return saved?.let(::reference) ?: last()?.let(::reference)
     }

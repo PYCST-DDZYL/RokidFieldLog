@@ -20,8 +20,7 @@ class PhoneIssueStore(context: Context) {
     val inspector = ImageInspector(::dimensions)
     private val texts = object : AtomicTextFiles {
         override fun read(file: File): String = AtomicFile(file).openRead().use {
-            check(it.channel.size() <= InspectionCodec.MAX_BYTES) { "记录文件过大" }
-            it.bufferedReader(Charsets.UTF_8).readText()
+            RecordText.read(it, InspectionCodec.MAX_BYTES)
         }
         override fun write(file: File, text: String) {
             check(file.parentFile!!.isDirectory || file.parentFile!!.mkdirs())
