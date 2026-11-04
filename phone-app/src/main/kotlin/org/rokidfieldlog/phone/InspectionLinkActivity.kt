@@ -158,6 +158,7 @@ class InspectionLinkActivity : InspectionScreen() {
             out.putString("site", site.text.toString()); out.putInt("category", category.selectedItemPosition)
             out.putInt("visibility", visibility.selectedItemPosition); out.putInt("finding", finding.selectedItemPosition)
             out.putString("date", observedOn); out.putString("note", note.text.toString()); out.putBoolean("confirmed", confirmed.isChecked)
-        }; super.onSaveInstanceState(out)
+        } else restored?.let(out::putAll)
+        super.onSaveInstanceState(out)
     }
 }
