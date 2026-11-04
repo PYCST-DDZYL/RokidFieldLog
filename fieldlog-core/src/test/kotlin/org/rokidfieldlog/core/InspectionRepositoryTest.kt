@@ -221,6 +221,29 @@ class InspectionRepositoryTest {
         assertEquals(first, repo.load(first.issueId))
     }
 
+    @Test fun duplicatePhotoFingerprintsInStoredHistoryBlockVerdictsAndPreserveTheRecord() {
+        val first = create()
+        val claim = repo.repairClaim(first.issueId, first.revision, "SYNTHETIC repair feedback")
+        val latest = observe(claim)
+        val repeated = latest.copy(events = latest.events.map { event ->
+            if (event.eventId == latest.observations.last().eventId)
+                event.copy(photoSha256 = first.observations.first().photoSha256) else event
+        })
+        val target = File(folder, latest.issueId + ".json")
+        val originalBytes = InspectionCodec.encode(repeated).toByteArray(Charsets.UTF_8)
+        target.writeBytes(originalBytes)
+
+        assertEquals(1, repo.scan().unreadableCount)
+        val error = assertThrows(IllegalArgumentException::class.java) { repo.load(latest.issueId) }
+        assertTrue(error.message.orEmpty().contains("重复照片"))
+        assertThrows(IllegalArgumentException::class.java) { verify(latest) }
+        assertThrows(IllegalArgumentException::class.java) {
+            repo.repairClaim(latest.issueId, latest.revision, "Must not overwrite")
+        }
+        assertThrows(IllegalStateException::class.java) { repo.requireUnlinked(first.observations.first().photoId!!) }
+        assertArrayEquals(originalBytes, target.readBytes())
+    }
+
     @Test fun coercedChronologyCannotLoadAsRepairedOrOverwriteTheStoredHistory() {
         val first = create()
         val claim = repo.repairClaim(first.issueId, first.revision, "SYNTHETIC repair feedback")

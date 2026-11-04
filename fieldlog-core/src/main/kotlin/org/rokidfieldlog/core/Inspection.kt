@@ -101,6 +101,7 @@ object InspectionCodec {
         require(issue.siteLabel.isNotBlank() && issue.siteLabel.length <= 200)
         require(issue.events.size in 1..MAX_EVENTS && issue.revision == issue.events.size.toLong())
         val ids = mutableSetOf<String>(); val photos = mutableSetOf<String>()
+        val photoHashes = mutableSetOf<String>()
         val prior = mutableListOf<InspectionEvent>()
         issue.events.forEachIndexed { index, event ->
             require(CaptureFiles.validId(event.eventId) && ids.add(event.eventId) && event.sequence == index)
@@ -109,6 +110,7 @@ object InspectionCodec {
                 InspectionEventKind.OBSERVATION -> {
                     require(CaptureFiles.validId(event.photoId ?: "") && photos.add(event.photoId!!))
                     require(event.photoSha256?.matches(Regex("[0-9a-f]{64}")) == true)
+                    require(photoHashes.add(event.photoSha256!!)) { "问题历史包含重复照片，原文件保留，请核查观察记录" }
                     val date = LocalDate.parse(requireNotNull(event.observedOn))
                     prior.lastOrNull { it.kind == InspectionEventKind.OBSERVATION }?.let { require(date >= LocalDate.parse(it.observedOn)) { "请按观察日期先后关联照片" } }
                     requireNotNull(event.visibility); requireNotNull(event.finding); require(event.sameSiteConfirmed)
