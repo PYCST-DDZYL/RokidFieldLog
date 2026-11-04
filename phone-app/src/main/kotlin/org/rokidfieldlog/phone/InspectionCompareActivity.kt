@@ -23,8 +23,16 @@ class InspectionCompareActivity : InspectionScreen() {
     private fun loadComparison() = task("正在校验原图并生成对照…", {
         val comparison = store.inspections.comparison(issueId)
         val baseline = store.uprightPreview(comparison.baselinePhoto)
-        val latest = if (comparison.baseline.photoId == comparison.latest.photoId) baseline else store.uprightPreview(comparison.latestPhoto)
+        val latest = try {
+            if (comparison.baseline.photoId == comparison.latest.photoId) baseline else store.uprightPreview(comparison.latestPhoto)
+        } catch (error: Throwable) {
+            baseline.recycle()
+            throw error
+        }
         Triple(comparison, baseline, latest)
+    }, onAbandoned = { (_, baseline, latest) ->
+        baseline.recycle()
+        if (latest !== baseline) latest.recycle()
     }) { (comparison, baseline, latest) -> render(comparison, baseline, latest) }
     private fun render(comparison: InspectionComparison, baseline: Bitmap, latest: Bitmap) {
         current = comparison
