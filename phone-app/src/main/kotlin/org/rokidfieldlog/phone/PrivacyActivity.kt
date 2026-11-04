@@ -130,7 +130,7 @@ class PrivacyActivity : Activity() {
             out.putLong("revision", it.draft.revision)
             val masks = if (candidate == null) image.masks else editingMasks
             out.putFloatArray("masks", masks.flatMap { box -> listOf(box.left, box.top, box.right, box.bottom) }.toFloatArray())
-        }
+        } ?: restored?.let(out::putAll)
         super.onSaveInstanceState(out)
     }
     override fun onDestroy() {
