@@ -47,7 +47,7 @@
 | 眼镜到手机无线同步、地图修正和坐标转换 | 待 Rokid 协议、地图提供方与设备集成 |
 | 江苏12345网页材料字段 | 已核对公开页字段；实交市/官方区县选项尚未确定，登录、附件和真实受理均未验证，其他政务渠道未适配 |
 | 实地耗时、续航和发热 | 待设备试验，不能把合成演示当成结果 |
-| JVM 测试、两端 APK、Lint 和 CI | 277 项核心测试、两端干净 release 构建及固定签名检查通过。Lint 有 0 错误、83 条警告。[本轮检查和真机复测步骤](docs/bugcheck-2026-11-03.md)已记录，真机验收待执行。远端结果见对应提交的 [Actions](https://github.com/PYCST-DDZYL/RokidFieldLog/actions) |
+| JVM 测试、两端 APK、Lint 和 CI | 283 项核心测试、两端干净 release 构建及固定签名检查通过。Lint 有 0 错误、83 条警告。[本轮检查和真机复测步骤](docs/bugcheck-2026-11-04.md)已记录，真机验收待执行。远端结果见对应提交的 [Actions](https://github.com/PYCST-DDZYL/RokidFieldLog/actions) |
 
 ## 数据和交接
 
