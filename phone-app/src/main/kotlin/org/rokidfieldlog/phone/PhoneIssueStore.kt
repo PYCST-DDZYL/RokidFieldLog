@@ -68,32 +68,40 @@ class PhoneIssueStore(context: Context) {
     }.getOrNull()
 
     fun uprightPreview(file: File, longestEdge: Int = 2048): Bitmap {
+        require(longestEdge > 0)
         checkNotNull(dimensions(file)) { "照片无法解码或尺寸过大" }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.path, bounds)
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / sample > longestEdge) sample *= 2
         val decoded = checkNotNull(BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample }))
-        val orientation = ExifInterface(file).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-        val matrix = Matrix().apply {
-            when (orientation) {
-                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> setScale(-1f, 1f)
-                ExifInterface.ORIENTATION_ROTATE_180 -> setRotate(180f)
-                ExifInterface.ORIENTATION_FLIP_VERTICAL -> setScale(1f, -1f)
-                ExifInterface.ORIENTATION_TRANSPOSE -> { setRotate(90f); postScale(-1f, 1f) }
-                ExifInterface.ORIENTATION_ROTATE_90 -> setRotate(90f)
-                ExifInterface.ORIENTATION_TRANSVERSE -> { setRotate(270f); postScale(-1f, 1f) }
-                ExifInterface.ORIENTATION_ROTATE_270 -> setRotate(270f)
+        var bitmap = decoded
+        try {
+            val orientation = ExifInterface(file).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            val matrix = Matrix().apply {
+                when (orientation) {
+                    ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> setScale(-1f, 1f)
+                    ExifInterface.ORIENTATION_ROTATE_180 -> setRotate(180f)
+                    ExifInterface.ORIENTATION_FLIP_VERTICAL -> setScale(1f, -1f)
+                    ExifInterface.ORIENTATION_TRANSPOSE -> { setRotate(90f); postScale(-1f, 1f) }
+                    ExifInterface.ORIENTATION_ROTATE_90 -> setRotate(90f)
+                    ExifInterface.ORIENTATION_TRANSVERSE -> { setRotate(270f); postScale(-1f, 1f) }
+                    ExifInterface.ORIENTATION_ROTATE_270 -> setRotate(270f)
+                }
             }
+            bitmap = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+            if (bitmap !== decoded) decoded.recycle()
+            val ratio = minOf(1f, longestEdge.toFloat() / maxOf(bitmap.width, bitmap.height))
+            if (ratio == 1f) return bitmap
+            val oriented = bitmap
+            bitmap = Bitmap.createScaledBitmap(oriented, (oriented.width * ratio).toInt().coerceAtLeast(1),
+                (oriented.height * ratio).toInt().coerceAtLeast(1), true)
+            if (bitmap !== oriented) oriented.recycle()
+            return bitmap
+        } catch (error: Throwable) {
+            bitmap.recycle()
+            throw error
         }
-        val oriented = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
-        if (oriented !== decoded) decoded.recycle()
-        val ratio = minOf(1f, longestEdge.toFloat() / maxOf(oriented.width, oriented.height))
-        if (ratio == 1f) return oriented
-        val scaled = Bitmap.createScaledBitmap(oriented, (oriented.width * ratio).toInt().coerceAtLeast(1),
-            (oriented.height * ratio).toInt().coerceAtLeast(1), true)
-        if (scaled !== oriented) oriented.recycle()
-        return scaled
     }
 
     fun renderReview(entry: LibraryEntry, masks: List<MaskRect>): PhotoReview {
@@ -102,10 +110,19 @@ class PhoneIssueStore(context: Context) {
         require(PhotoDigest.sha256(entry.original) == entry.importedSha256) { "原图与导入时不一致，请核查采集包" }
         val profile = MaterialProfile()
         val preview = uprightPreview(entry.original, profile.maxLongEdge)
-        var bitmap = Bitmap.createBitmap(preview.width, preview.height, Bitmap.Config.ARGB_8888,
-            false, ColorSpace.get(ColorSpace.Named.SRGB))
-        Canvas(bitmap).drawBitmap(preview, 0f, 0f, null)
-        preview.recycle()
+        var bitmap = try {
+            val copy = Bitmap.createBitmap(preview.width, preview.height, Bitmap.Config.ARGB_8888,
+                false, ColorSpace.get(ColorSpace.Named.SRGB))
+            try {
+                Canvas(copy).drawBitmap(preview, 0f, 0f, null)
+                copy
+            } catch (error: Throwable) {
+                copy.recycle()
+                throw error
+            }
+        } finally {
+            preview.recycle()
+        }
         val target = entry.reviewFile("review-" + UUID.randomUUID() + ".jpg")
         val encoded = entry.reviewFile("review-" + UUID.randomUUID() + ".jpg")
         try {
@@ -137,7 +154,7 @@ class PhoneIssueStore(context: Context) {
             require(PhotoDigest.sha256(entry.original) == entry.importedSha256) { "原图在处理时发生变化" }
             return PhotoReview(target.name, entry.importedSha256, PhotoDigest.sha256(target),
                 target.length(), bitmap.width, bitmap.height, masks.toList())
-        } catch (error: Exception) { target.delete(); throw error }
+        } catch (error: Throwable) { target.delete(); throw error }
         finally { encoded.delete(); bitmap.recycle() }
     }
 }
