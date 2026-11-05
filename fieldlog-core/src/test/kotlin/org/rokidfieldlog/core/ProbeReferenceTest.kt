@@ -74,4 +74,61 @@ class ProbeReferenceTest {
         assertEquals("ANDROID_SYSTEM/SYNTHETIC_ONLY", fix.source)
         assertNull(CaptureRecordCodec.referenceFromProbe(tree.toString(), 0L))
     }
+
+    @Test fun historyDecoderKeepsValidSuccessAndUnknownAnnotations() {
+        val tree = result().apply { addProperty("fixtureExtension", "SYNTHETIC retained annotation") }
+        val decoded = CaptureRecordCodec.decodeProbeHistory(tree.toString(), selectedAt)
+        assertEquals(tree, JsonParser.parseString(decoded))
+        assertNotNull(CaptureRecordCodec.referenceFromProbe(decoded, selectedAt))
+    }
+
+    @Test fun failedAndCancelledHistoryRemainsDiagnosticWithoutAReference() {
+        for (status in listOf("FAILED", "CANCELLED")) {
+            val tree = result().apply {
+                addProperty("status", status)
+                add("location", JsonNull.INSTANCE)
+                addProperty("source", "NONE")
+            }
+            val decoded = CaptureRecordCodec.decodeProbeHistory(tree.toString(), selectedAt)
+            assertEquals(tree, JsonParser.parseString(decoded))
+            assertNull(CaptureRecordCodec.referenceFromProbe(decoded, selectedAt))
+        }
+    }
+
+    @Test fun duplicateHistoryFieldsAreRejectedBeforeAPlatformParserCanOverwriteThem() {
+        val valid = result().toString()
+        for (text in listOf(
+            valid.replace("\"status\":\"SUCCESS\"", "\"status\":\"FAILED\",\"status\":\"SUCCESS\""),
+            valid.replace("\"isMock\":false", "\"isMock\":true,\"isMock\":false"),
+        )) {
+            assertNotEquals(valid, text)
+            assertThrows(com.google.gson.JsonParseException::class.java) {
+                CaptureRecordCodec.decodeProbeHistory(text, selectedAt)
+            }
+        }
+    }
+
+    @Test fun decimalIntegerSpellingsCannotBecomeValidAfterJsonNormalization() {
+        for (key in listOf("schemaVersion", "receivedAtUtcMillis", "ageAtReceiptMillis", "locationTimeUtcMillis")) {
+            val tree = result()
+            val parent = if (key in setOf("ageAtReceiptMillis", "locationTimeUtcMillis")) tree.getAsJsonObject("location") else tree
+            parent.add(key, JsonParser.parseString(parent[key].toString() + ".0"))
+            assertThrows(IllegalArgumentException::class.java) {
+                CaptureRecordCodec.decodeProbeHistory(tree.toString(), selectedAt)
+            }
+        }
+    }
+
+    @Test fun unknownOrCoercedHistoryStatusAndIncompleteSuccessCannotBeDisplayedAsSuccess() {
+        for (value in listOf("\"UNKNOWN\"", "[\"SUCCESS\"]", "null")) {
+            val tree = result().apply { add("status", JsonParser.parseString(value)) }
+            assertThrows(IllegalArgumentException::class.java) {
+                CaptureRecordCodec.decodeProbeHistory(tree.toString(), selectedAt)
+            }
+        }
+        val missingFix = result().apply { remove("location") }
+        assertThrows(IllegalArgumentException::class.java) {
+            CaptureRecordCodec.decodeProbeHistory(missingFix.toString(), selectedAt)
+        }
+    }
 }

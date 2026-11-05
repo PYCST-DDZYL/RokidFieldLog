@@ -128,6 +128,20 @@ object CaptureRecordCodec {
 
     fun encodeProbe(record: LocationProbeRecord): String = gson.toJson(record)
 
+    /** Validate persisted bytes before Android JSON can normalize numbers or duplicate fields. */
+    fun decodeProbeHistory(text: String, readAtUtcMillis: Long): String {
+        require(readAtUtcMillis > 0)
+        val original = parse(text)
+        requireVersion(original)
+        val status = original["status"]
+        require(status != null && status.isJsonPrimitive && status.asJsonPrimitive.isString &&
+            status.asString in setOf("SUCCESS", "FAILED", "CANCELLED")) { "定位历史状态异常，原文件保留" }
+        if (status.asString == "SUCCESS") {
+            requireNotNull(referenceFromProbe(text, readAtUtcMillis)) { "成功定位历史的数据异常，未采用，原文件保留" }
+        }
+        return original.toString()
+    }
+
     /** Read an explicitly selected historical result, without claiming it is a current fix. */
     fun referenceFromProbe(text: String, selectedAtUtcMillis: Long): PhotographerReference? = runCatching {
         require(text.toByteArray(Charsets.UTF_8).size <= 256 * 1024)

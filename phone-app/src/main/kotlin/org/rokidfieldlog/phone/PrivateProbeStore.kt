@@ -37,10 +37,13 @@ class PrivateProbeStore(context: Context) {
         }
     }
 
-    fun last(): JSONObject? = try {
+    fun last(): JSONObject? = readProbe(lastProbe)
+
+    private fun readProbe(target: File): JSONObject? = try {
         // AtomicFile must be allowed to restore a backup after an interrupted write.
-        AtomicFile(lastProbe).openRead().use { input ->
-            JSONObject(RecordText.read(input, 256 * 1024))
+        AtomicFile(target).openRead().use { input ->
+            val text = RecordText.read(input, 256 * 1024)
+            JSONObject(CaptureRecordCodec.decodeProbeHistory(text, System.currentTimeMillis()))
         }
     } catch (exception: Exception) { null }
 
@@ -48,9 +51,7 @@ class PrivateProbeStore(context: Context) {
         CaptureRecordCodec.referenceFromProbe(data.toString(), System.currentTimeMillis())
 
     fun lastReference(): PhotographerReference? {
-        val saved = runCatching { AtomicFile(File(root, "last-successful-probe.json")).openRead().use { input ->
-            JSONObject(RecordText.read(input, 256 * 1024))
-        } }.getOrNull()
+        val saved = readProbe(File(root, "last-successful-probe.json"))
         return saved?.let(::reference) ?: last()?.let(::reference)
     }
 
